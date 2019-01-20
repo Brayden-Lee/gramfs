@@ -9,6 +9,9 @@
 #define DENTRY_NAME_LEN 32
 #define PATH_DELIMIT "/"
 
+#define DIR_DENTRY 0
+#define FILE_DENTRY 1
+
 struct dentry {
 	uint64_t p_inode;
 	uint64_t o_inode;
@@ -17,6 +20,7 @@ struct dentry {
 	uint32_t mode;
 	uint32_t ctime;
 	uint32_t mtime;
+	uint32_t atime;
 	uint32_t size;
 	uint32_t uid;
 	uint32_t gid;
