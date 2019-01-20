@@ -185,7 +185,30 @@ int gramfs_mkdir(const char *path, mode_t mode)
 
 int gramfs_rmdir(const char *path, bool rmall)
 {
-
+	string full_path = path;
+	struct dentry *dentry = NULL;
+	lookup(full_path, dentry);
+	if (dentry == NULL)
+		return -1;
+	string read_key = to_string(dentry->p_inode) + dentry->dentry_name;
+	vector<string> tmp_key;
+	gramfs_super->get_nodekv().match_prefix(read_key, &tmp_key, -1, NULL);
+	if (tmp_key.empty())
+	{
+		string p_name = basename(dirname(full_path));
+		read_key = p_name + dentry->dentry_name + to_string(dentry->p_inode);
+		gramfs_super->get_edgekv().remove(read_key);
+		return 0;
+	} else {
+		if (rmall)
+		{
+			string p_name = basename(dirname(full_path));
+			read_key = p_name + dentry->dentry_name + to_string(dentry->p_inode);
+			gramfs_super->get_edgekv().remove(read_key);    // no need to remove the child, because it can't be found
+		} else {
+			return -1;    // not an empty dir without -r
+		}
+	}
 }
 
 int gramfs_readdir(const char *path)
@@ -234,6 +257,56 @@ int gramfs_getattr(const char *path, struct stat *st)
 int gramfs_rename(const char *path, const char *newpath)
 {
 
+}
+
+int gramfs_create(const char *path, mote_t mode)
+{
+	string full_path = path;
+	int index = full_path.find_last_of(PATH_DELIMIT);
+	string p_path = full_path.substr(0, index);
+	struct dentry *dentry = NULL;
+	lookup(p_path, dentry);
+	if (dentry == NULL)
+		return -1;
+	string add_key;
+	string cur_name = full_path.substr(index + 1, full_path.size());
+	string p_name = p_path.substr(p_path.find_last_of(PATH_DELIMIT) + 1, p_path.size());
+	add_key = p_name + cur_name + dentry->o_inode;
+	string tmp_key;
+	int check_res = gramfs_super->get_edgekv().check(add_key);
+	if (check_res > 0)
+		return -1;    // exist
+	string add_value;
+	struct dentry *add_dentry = (struct dentry *)calloc(1, sizeof(struct dentry));
+	strcpy(add_dentry, dentry, sizeof(struct dentry));
+	add_dentry->o_inode = gramfs_super->generate_unique_id();
+	add_dentry->p_inode = dentry->o_inode;
+	add_dentry->dentry_name = cur_name;
+	add_value = (string) add_dentry;
+	gramfs_super->get_edgekv().set(add_key, add_value);
+	add_key = to_string(dentry->o_inode) + dentry->dentry_name + to_string(add_dentry->o_inode);
+	add_value = cur_name;
+	gramfs_super->get_nodekv().set(add_key, add_value);
+	return 0;
+	
+	
+}
+
+int gramfs_unlink(const char *path)
+{
+	string full_path = path;
+	struct dentry *dentry = NULL;
+	lookup(full_path, dentry);
+	if (dentry == NULL)
+		return -1;
+	
+	int index = full_path.find_last_of(PATH_DELIMIT);
+	string p_path = full_path.substr(0, index);
+	string cur_name = full_path.substr(index + 1, full_path.size());
+	index = p_path.find_last_of(PATH_DELIMIT);
+	string p_name = p_path.substr(index + 1, p_path.size());
+	string rm_key = p_name + cu
+	
 }
 
 int gramfs_open(const char *path, mode_t mode)
