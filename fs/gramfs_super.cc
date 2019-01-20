@@ -5,6 +5,21 @@ GramfsSuper::~GramfsSuper()
 	cout<<"GramfsSuper has been destroy!"<<endl;
 }
 
+GramfsSuper::GramfsSuper() : edge_name("/tmp/tmp.kch"), node_name("/tmp/tmp.kct")
+{
+	curr_unique_id = 0;
+}
+
+GramfsSuper::GramfsSuper(const char *edgepath, const char*nodepath) : edge_name(edgepath), node_name(nodepath)
+{
+	curr_unique_id = 0;
+}
+
+GramfsSuper::GramfsSuper(const string edgepath, const string nodepath) : edge_name(edgepath), node_name(nodepath)
+{
+	curr_unique_id = 0;
+}
+
 int GramfsSuper::Open()
 {
 	if (!edge_db.open(edge_name, PolyDB::OWRITER | PolyDB::OCREATE))
@@ -43,4 +58,10 @@ PolyDB GramfsSuper::get_edgekv()
 PolyDB GramfsSuper::get_nodekv()
 {
 	return node_db;
+}
+
+int64_t GramfsSuper::generate_unique_id()
+{
+	curr_unique_id++;
+	return curr_unique_id;
 }

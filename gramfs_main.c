@@ -1,145 +1,169 @@
 #define FUSE_USE_VERSION 30
-
 #include <stdio.h>
-#include <fuse_lowlevel.h>
+#include <string.h>
+#include <fuse.h>
+#include <malloc.h>
+#include "fs/fs.h"
 
-#include "fs/gramfs.h"
 
-static void gramfs_ll_init(void *userdata, struct fuse_conn_info *conn)
+static struct fs *fs;
+
+int fuse_open(const char *path, struct fuse_file_info *fileInfo)
 {
-	fs_init();
+	return fs_open(fs, path, fileInfo);
 }
 
-static void gramfs_ll_destroy(void *userdata)
+int fuse_create(const char * path, mode_t mode, struct fuse_file_info * info)
 {
-	fs_destroy();
+    return fs_create(fs, path, mode, info);
 }
 
-static void gramfs_ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
+int fuse_mkdir(const char *path, mode_t mode)
 {
-	fs_lookup();
+	return fs_mkdir(fs, path, mode);
 }
 
-static void gramfs_ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
+int fuse_opendir(const char *path, struct fuse_file_info *fileInfo)
 {
-	fs_getattr();
+    return fs_opendir(fs, path, fileInfo);
 }
 
-static void gramfs_ll_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr, int to_set, struct fuse_file_info *fi)
+int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fileInfo)
 {
-	fs_setattr();
+	return fs_readdir(fs, path, buf, filler, offset, fileInfo);
 }
 
-static void gramfs_ll_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name, mode_t mode)
+int fuse_getattr(const char* path, struct stat* st)
 {
-	fs_mkdir();
+    return fs_getattr(fs, path, st);
 }
 
-static void gramfs_ll_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
+int fuse_rmdir(const char *path)
 {
-	fs_open();
+	return fs_rmdir(fs, path);
 }
 
-static  void gramfs_ll_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t offset, struct fuse_file_info *fi)
+int fuse_rename(const char *path, const char *newpath)
 {
-	fs_read();
+	return fs_rename(fs, path, newpath);
 }
 
-static void gramfs_ll_write(fuse_req_t req, fuse_ino_t ino, const char *buf, size_t size, off_t off, struct fuse_file_info *fi)
+int fuse_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fileInfo)
 {
-	fs_write();
+	return fs_read(fs, path, buf, size, offset, fileInfo);
 }
 
-static void gramfs_ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse_file_info *fi)
+int fuse_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fileInfo)
 {
-	fs_readdir();
+	return fs_write(fs, path, buf, size, offset, fileInfo);
 }
 
-static void gramfs_ll_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
+int fuse_release(const char *path, struct fuse_file_info *fileInfo)
 {
-	fs_release();
+    return fs_release(fs, path, fileInfo);
 }
 
-static void gramfs_ll_releasedir(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi)
+int fuse_releasedir(const char *path, struct fuse_file_info *fileInfo)
 {
-	fs_releasedir();
+	return fs_releasedir(fs, path, fileInfo);
 }
 
-static void gramfs_ll_create(fuse_req_t req, fuse_ino_t parent, const char *name, mode_t mode, struct fuse_file_info *fi)
+int fuse_utimens(const char * path, const struct timespec tv[2])
 {
-	fs_create();
+	return fs_utimens(fs, path, tv);
 }
 
-static void gramfs_ll_rmdir(fuse_req_t req, fuse_ino_t parent, const char *name)
+int fuse_truncate(const char * path, off_t offset)
 {
-	fs_rmdir();
+	return fs_truncate(fs, path, offset);
 }
 
-static void gramfs_ll_rename(fuse_req_t req, fuse_ino_t parent, const char *name, fuse_ino_t newparent, const char *newname)
+int fuse_unlink(const char * path)
 {
-	fs_rename();
+	return fs_unlink(fs, path);
 }
 
-static struct fuse_lowlevel_ops gramfs_ll_operation = {
-	.init		= gramfs_ll_init,
-	.destroy	= gramfs_ll_destroy,
-	.lookup 	= gramfs_ll_lookup,
-	.getattr 	= gramfs_ll_getattr,
-	.setattr	= gramfs_ll_setattr,
-	.mkdir		= gramfs_ll_mkdir,
-	.rmdir 		= gramfs_ll_rmdir,
-	.rename 	= gramfs_ll_rename,
-	.readdir 	= gramfs_ll_readdir,
-	.releasedir = gramfs_ll_releasedir,
-	.open 		= gramfs_ll_open,
-	.read 		= gramfs_ll_read,
-	.write 		= gramfs_ll_write,
-	.release 	= gramfs_ll_release,
-	.create		= gramfs_ll_create
+int fuse_chmod(const char * path, mode_t mode)
+{
+	return fs_chmod(fs, path, mode);
+}
+
+int fuse_chown(const char * path, uid_t owner, gid_t group)
+{
+	return fs_chown(fs, path, owner, group);
+}
+
+int fuse_access(const char * path, int amode)
+{
+	return fs_access(fs, path, amode);
+}
+
+int fuse_symlink(const char * oldpath, const char * newpath)
+{
+	return fs_symlink(fs, oldpath, newpath);
+}
+
+int fuse_readlink(const char * path, char * buf, size_t size)
+{
+	return fs_readlink(fs, path, buf, size);
+}
+
+static struct fuse_operations fuse_ops =
+{
+    .open = fuse_open,
+    .mkdir = fuse_mkdir,
+    .opendir = fuse_opendir,
+    .readdir = fuse_readdir,
+    .getattr = fuse_getattr,
+    .rmdir = fuse_rmdir,
+    .rename = fuse_rename,
+    .create = fuse_create,
+    .read = fuse_read,
+    .write = fuse_write,
+    .release = fuse_release,
+    .releasedir = fuse_releasedir,
+    .utimens = fuse_utimens,
+    .truncate = fuse_truncate,
+    .unlink = fuse_unlink,
+    .chmod = fuse_chmod,
+    .chown = fuse_chown,
+    .access = fuse_access,
+    .symlink = fuse_symlink,
+    .readlink = fuse_readlink,
 };
+
+static void usage(void)
+{
+    printf(
+    "usage:\n"
+    );
+}
 
 int main(int argc, char * argv[])
 {
-	struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-	struct fuse_session *se;
-	struct fuse_cmdline_opts opts;
-	if (fuse_parse_cmdline(&args, &opts) != 0)
-		return 1;
-	if (opts.show_help) {
-		printf("usage: %s [options] <mountpoint>\n\n", argv[0]);
-		fuse_cmdline_help();
-		fuse_lowlevel_help();
-		ret = 0;
-		goto err_out1;
-	} else if (opts.show_version) {
-		printf("FUSE library version %s\n", fuse_pkgversion());
-		fuse_lowlevel_version();
-		ret = 0;
-		goto err_out1;
+	int ret;
+	int i;
+
+	for (i = 0; i < argc; i++) {
+		if (strcmp(argv[i], "--help") == 0) {
+			usage();
+			return 0;
+		}
 	}
-	se = fuse_session_new(&args, &gramfs_ll_operation, sizeof(gramfs_ll_operation), NULL);
-	if (se == NULL)
-		goto err_out1;
-	if (fuse_set_signal_handlers(se) != 0)
-		goto err_out2;
-	if (fuse_session_mount(se, opts.mountpoint) != 0)
-	    goto err_out3;
 
-	fuse_daemonize(opts.foreground);
-	/* Block until ctrl+c or fusermount -u */
-	if (opts.singlethread)
-		ret = fuse_session_loop(se);
-	else
-		ret = fuse_session_loop_mt(se, opts.clone_fd);
+	int fuse_argc = 0;
+	char * fuse_argv[argc];
+	for (i = 0; i < argc; i++) {
+		if (argv[i] != NULL) {
+			fuse_argv[fuse_argc++] = argv[i];
+		}
+	}
 
-	fuse_session_unmount(se);
-err_out3:
-	fuse_remove_signal_handlers(se);
-err_out2:
-	fuse_session_destroy(se);
-err_out1:
-	free(opts.mountpoint);
-	fuse_opt_free_args(&args);
-
-	return ret ? 1 : 0;
+	fs = (struct fs *)malloc(sizeof(struct fs));
+	fs_init(fs, argv[1]);
+	printf("starting fuse main...\n");
+	ret = fuse_main(fuse_argc, fuse_argv, &fuse_ops, NULL);
+	printf("fuse main finished, ret %d\n", ret);
+	fs_destroy(fs);
+	return ret;
 }
