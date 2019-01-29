@@ -8,9 +8,13 @@
 
 #define DENTRY_NAME_LEN 32
 #define PATH_DELIMIT "/"
+#define BIG_FILE_PATH "/mnt/bigfile/"
+#define SMALL_FILE_MAX_SIZE 4 * 1024
 
 #define DIR_DENTRY 0
 #define FILE_DENTRY 1
+#define SMALL_FILE 1
+#define NORMAL_FILE 0
 
 struct dentry {
 	uint64_t p_inode;
@@ -27,15 +31,21 @@ struct dentry {
 	uint32_t nlink;
 };
 
+enum dentryflags
+{
+	D_type,    // file/dir
+	D_small_file,    // 1 is small file, 0 is normal file
+};
+	
 struct part_list {
 	char *list_name;
-	std::vector<string> *part_bucket;
+	std::vector<string> *part_bucket;    // store the value (kv) of this node
 	struct part_list *next;
-}
+};
 
 // api for user
-int fs_init(const char *edgepath, const char *nodepath);
-void gramfs_destroy(const char *edgepath, const char *nodepath);
+int gramfs_init(const char *edgepath, const char *nodepath, const char *sfpath);
+void gramfs_destroy();
 int lookup(const char *path);
 int gramfs_mkdir(const char *path, mode_t mode);
 int gramfs_rmdir(const char *path, bool rmall);

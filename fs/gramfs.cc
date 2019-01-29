@@ -87,6 +87,7 @@ void deserialize_dentry(char * buf, struct dentry *dentry)
 	memcpy(&(dentry->nlink), &buf[pos], sizeof(dentry->nlink));	
 }
 
+// for /a/b/c/d/e ==> ' ','a','b','c','d','e'
 void split_path(const string& src, const string& separator, vector<string>& dest)
 {
 	string str = src;
@@ -132,7 +133,7 @@ struct dentry* dentry_match(struct part_list *plist)
 			str_dentry = plist->part_bucket.front();
 			plist->part_bucket.pop_back();
 			//value =
-			//dentry = (struct dentry*) &(str_dentry.data());  ||||
+			deserialize_dentry(str_dentry.data(), dentry);
 			if (dentry->p_inode == curr_id)
 			{
 				plist->part_bucket.clear();
@@ -212,13 +213,13 @@ int lookup(const char *path, struct dentry *dentry)
 }
 
 // user api
-int gramfs_init(const char *edgepath, const char *nodepath)
+int gramfs_init(const char *edgepath, const char *nodepath, const char *sfpath)
 {
-	gramfs_super = new GramfsSuper(edgepath, nodepath);
+	gramfs_super = new GramfsSuper(edgepath, nodepath, sfpath);
 	return gramfs_super->Open();
 }
 
-void gramfs_destroy(const char *edgepath, const char *nodepath)
+void gramfs_destroy()
 {
 	gramfs_super->Close();
 	delete gramfs_super;
@@ -344,12 +345,12 @@ int gramfs_readdir(const char *path)
 
 int gramfs_opendir(const char *path)
 {
-	return gramfs_super->Open();
+	return 0;
 }
 
 int gramfs_releasedir(const char *path)
 {
-	return gramfs_super->Close();
+	//return gramfs_super->Close();
 }
 
 int gramfs_getattr(const char *path, struct stat *st)
@@ -463,7 +464,7 @@ int gramfs_unlink(const char *path)
 
 int gramfs_open(const char *path, mode_t mode)
 {
-	int ret = gramfs_super->Open();
+	int ret = 0;
 	if ((mode & O_CREAT) == 0)
 		return gramfs_create(path, mode);
 	return ret;
@@ -471,7 +472,7 @@ int gramfs_open(const char *path, mode_t mode)
 
 int gramfs_release(const char *path)
 {
-	return gramfs_super->Close();
+	//return gramfs_super->Close();
 }
 
 int gramfs_read(const char *path, char *buf, size_t size, off_t offset)
