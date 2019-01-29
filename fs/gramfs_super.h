@@ -30,6 +30,6 @@ private:
 	string node_name;
 	string sf_name;
 	uint64_t curr_unique_id;
-}
+};
 
 #endif

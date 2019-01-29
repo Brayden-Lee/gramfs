@@ -1,15 +1,28 @@
 #ifndef GRAMFS_H
 #define GRAMFS_H
 
-#include <stdio.h>
 #include <sys/time.h>
 #include <stdbool.h>
 #include <string>
+#include <vector>
+#include "gramfs_super.h"
+
+using namespace std;
 
 #define DENTRY_NAME_LEN 32
 #define PATH_DELIMIT "/"
 #define BIG_FILE_PATH "/mnt/bigfile/"
 #define SMALL_FILE_MAX_SIZE 4 * 1024
+
+
+// error code
+#define ENOENT 2
+#define EIO 5
+#define EEXIST 17
+#define ENOTDIR 20
+#define EISDIR 21
+#define ENOTEMPTY 39
+
 
 #define DIR_DENTRY 0
 #define FILE_DENTRY 1
@@ -39,14 +52,15 @@ enum dentryflags
 	
 struct part_list {
 	char *list_name;
-	std::vector<string> *part_bucket;    // store the value (kv) of this node
+	vector<string> *part_bucket;    // store the value (kv) of this node
 	struct part_list *next;
 };
 
 // api for user
 int gramfs_init(const char *edgepath, const char *nodepath, const char *sfpath);
 void gramfs_destroy();
-int lookup(const char *path);
+GramfsSuper* get_gramfs_super();
+int lookup(const char *path, struct dentry *dentry);
 int gramfs_mkdir(const char *path, mode_t mode);
 int gramfs_rmdir(const char *path, bool rmall);
 int gramfs_readdir(const char *path);

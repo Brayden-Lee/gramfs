@@ -1,8 +1,10 @@
-#include <cstring>
 #include <iostream>
-#include <vector>
 #include <kcpolydb.h>
-#include <libgen.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sstream>
 #include "gramfs.h"
 #include "gramfs_super.h"
 
@@ -59,7 +61,7 @@ void serialize_dentry(struct dentry *dentry, char *outBuf)
 	memcpy(&outBuf[pos], &(dentry->nlink), sizeof(dentry->nlink));	
 }
 
-void deserialize_dentry(char * buf, struct dentry *dentry)
+void deserialize_dentry(const char * buf, struct dentry *dentry)
 {
 	int pos = 0;
 	memcpy(&(dentry->p_inode), &buf[pos], sizeof(dentry->p_inode));
@@ -115,10 +117,9 @@ void split_path(const string& src, const string& separator, vector<string>& dest
 struct dentry* dentry_match(struct part_list *plist)
 {
 	struct dentry* dentry = (struct dentry*)malloc(sizeof(struct dentry));
-	char *value = (char *) calloc(1, sizeof(struct dentry));
 	struct part_list *p;
 	string str_dentry = NULL;
-	int curr_id = 0;    // root inode
+	uint32_t curr_id = 0;    // root inode
 	bool triggle = false;
 	if (plist == NULL)
 	{
@@ -128,15 +129,14 @@ struct dentry* dentry_match(struct part_list *plist)
 	}
 	while (plist != NULL)
 	{
-		for (int i = 0; i < plist->part_bucket.size(); i++)
+		for (uint32_t i = 0; i < plist->part_bucket->size(); i++)
 		{
-			str_dentry = plist->part_bucket.front();
-			plist->part_bucket.pop_back();
-			//value =
+			str_dentry = plist->part_bucket->front();
+			plist->part_bucket->pop_back();
 			deserialize_dentry(str_dentry.data(), dentry);
 			if (dentry->p_inode == curr_id)
 			{
-				plist->part_bucket.clear();
+				plist->part_bucket->clear();
 				curr_id = dentry->o_inode;
 				triggle = true;    // if the path exist, must be triggle, or not eixst
 				break;
@@ -178,27 +178,27 @@ int lookup(const char *path, struct dentry *dentry)
 	struct part_list *p = NULL;
 	struct part_list *q = NULL;
 	pre_str = str_vector[1];
-	pre_str = "/" + PATH_DELIMIT + pre_str;
-	plist->list_name = pre_str.data();
+	pre_str = string("/") + PATH_DELIMIT + pre_str;
+	plist->list_name = (char *)pre_str.data();
 	plist->part_bucket = new vector<string>();
 	plist->next = NULL;
-	gramfs_super->get_edgekv.get(pre_str, &str_dentry) // for root dentry
-	plist->part_bucket.push_back(str_dentry);
+	gramfs_super->get_edgekv().get(pre_str, &str_dentry); // for root dentry
+	plist->part_bucket->push_back(str_dentry);
 	q = plist;
 
-	for (int i = 2; i < str_vector.size(); i++)
+	for (uint32_t i = 2; i < str_vector.size(); i++)
 	{
 		p = (struct part_list*)malloc(sizeof(struct part_list));
 		pre_str = str_vector[i - 1] + PATH_DELIMIT + str_vector[i];
-		p->list_name = pre_str.data();
+		p->list_name = (char *)pre_str.data();
 		p->part_bucket = new vector<string>();
 		p->next = NULL;
 
 		gramfs_super->get_edgekv().match_prefix(pre_str, &tmp_key, -1, NULL);  // get all prefix key without inode
-		for(int j = 0; j < tmp_key.size(); j++)
+		for(uint32_t j = 0; j < tmp_key.size(); j++)
 		{
 			gramfs_super->get_edgekv().get(tmp_key[j], &pre_str);
-			p->part_bucket.push_back(pre_str);  // save all value for this key
+			p->part_bucket->push_back(pre_str);  // save all value for this key
 		}
 		tmp_key.clear();
 		q->next = p;
@@ -207,7 +207,7 @@ int lookup(const char *path, struct dentry *dentry)
 	}
 	dentry = dentry_match(plist);    // allocate value and find value
 	if (dentry == NULL)
-		return -1;
+		return -ENOENT;
 	else
 		return 0;
 }
@@ -223,6 +223,11 @@ void gramfs_destroy()
 {
 	gramfs_super->Close();
 	delete gramfs_super;
+}
+
+GramfsSuper* get_gramfs_super()
+{
+	return gramfs_super;
 }
 
 int gramfs_mkdir(const char *path, mode_t mode)
@@ -244,15 +249,15 @@ int gramfs_mkdir(const char *path, mode_t mode)
 		p_name = p_path.substr(index + 1, p_path.size());
 	}
 	struct dentry *dentry = NULL;
-	lookup(p_path, dentry);
+	lookup(p_path.data(), dentry);
 	if (dentry == NULL)
-		return -1;    // parent not exist
+		return -ENOTDIR;    // parent not exist
 	string add_key;
 	string add_value;
 	add_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->o_inode);
 	if (gramfs_super->get_edgekv().get(add_key, &add_value))
 	{
-		return -1;    // this dir has existed
+		return -EEXIST;    // this dir has existed
 	}
 	struct dentry *add_dentry = (struct dentry *)calloc(1, sizeof(struct dentry));
 	add_dentry->o_inode = gramfs_super->generate_unique_id();
@@ -265,7 +270,9 @@ int gramfs_mkdir(const char *path, mode_t mode)
 	add_dentry->ctime = time(NULL);
 	add_dentry->mtime = time(NULL);
 	add_dentry->atime = time(NULL);
-	add_dentry->dentry_name = cur_name;
+	cur_name.copy(add_dentry->dentry_name,cur_name.size(),0);
+	*(add_dentry->dentry_name + cur_name.size()) = '\0';
+	//add_dentry->dentry_name = cur_name;
 	add_dentry->nlink = 0;
 	add_dentry->gid = getgid();
 	add_dentry->uid = getuid();
@@ -303,7 +310,7 @@ int gramfs_rmdir(const char *path, bool rmall)
 		p_name = p_path.substr(index + 1, p_path.size());
 	}
 	struct dentry *dentry = NULL;
-	lookup(full_path, dentry);
+	lookup(path, dentry);
 	if (dentry == NULL)
 		return -1;    // path not exist
 	string rm_key;
@@ -324,19 +331,20 @@ int gramfs_rmdir(const char *path, bool rmall)
 			return -1;    // not an empty dir without -r
 		}
 	}
+	return 0;
 }
 
 int gramfs_readdir(const char *path)
 {
 	string full_path = path;
 	struct dentry *dentry = NULL;
-	lookup(full_path, dentry);
+	lookup(path, dentry);
 	if (dentry == NULL)
-		return -1;
+		return -ENOENT;
 	string read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
 	vector<string> tmp_key;
 	gramfs_super->get_nodekv().match_prefix(read_key, &tmp_key, -1, NULL);
-	for (int i = 0; i < tmp_key.size(); i++)
+	for (uint32_t i = 0; i < tmp_key.size(); i++)
 	{
 		cout<< "child "<< i << " is :" <<tmp_key[i]<<endl;
 	}
@@ -350,31 +358,32 @@ int gramfs_opendir(const char *path)
 
 int gramfs_releasedir(const char *path)
 {
-	//return gramfs_super->Close();
+	return 0;
 }
 
 int gramfs_getattr(const char *path, struct stat *st)
 {
 	string full_path = path;
 	struct dentry *dentry  = NULL;
-	lookup(full_path, dentry);
+	lookup(path, dentry);
 	if (dentry == NULL)
-		return -1;
-	st->mtime = dentry->ctime;
-	st->ctime = dentry->ctime;
-	st->gid = dentry->gid;
-	st->uid = dentry->uid;
-	st->nlink = dentry->nlink;
-	st->size = dentry->size;
-	st->mode = dentry->mode;
+		return -ENOENT;
+	st->st_mtime = dentry->ctime;
+	st->st_ctime = dentry->ctime;
+	st->st_gid = dentry->gid;
+	st->st_uid = dentry->uid;
+	st->st_nlink = dentry->nlink;
+	st->st_size = dentry->size;
+	st->st_mode = dentry->mode;
+	return 0;
 }
 
 int gramfs_rename(const char *path, const char *newpath)
 {
-
+	return 0;
 }
 
-int gramfs_create(const char *path, mote_t mode)
+int gramfs_create(const char *path, mode_t mode)
 {
 	string full_path = path;
 	string p_path;
@@ -393,7 +402,7 @@ int gramfs_create(const char *path, mote_t mode)
 		p_name = p_path.substr(index + 1, p_path.size());
 	}
 	struct dentry *dentry = NULL;
-	lookup(p_path, dentry);
+	lookup(p_path.data(), dentry);
 	if (dentry == NULL)
 		return -1;
 	string add_key;
@@ -415,7 +424,9 @@ int gramfs_create(const char *path, mote_t mode)
 	add_dentry->ctime = time(NULL);
 	add_dentry->mtime = time(NULL);
 	add_dentry->atime = time(NULL);
-	add_dentry->dentry_name = cur_name;
+	cur_name.copy(add_dentry->dentry_name,cur_name.size(),0);
+	*(add_dentry->dentry_name + cur_name.size()) = '\0';
+	//add_dentry->dentry_name = cur_name;
 	add_dentry->nlink = 0;
 	add_dentry->gid = getgid();
 	add_dentry->uid = getuid();
@@ -451,15 +462,15 @@ int gramfs_unlink(const char *path)
 		p_name = p_path.substr(index + 1, p_path.size());
 	}
 	struct dentry *dentry = NULL;
-	lookup(full_path, dentry);
+	lookup(path, dentry);
 	if (dentry == NULL)
-
 		return -1;
 	string rm_key;
 	rm_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->p_inode);
 	gramfs_super->get_edgekv().remove(rm_key);
 	rm_key = to_string(dentry->p_inode) + PATH_DELIMIT + p_name + PATH_DELIMIT + to_string(dentry->o_inode);
 	gramfs_super->get_nodekv().remove(rm_key);
+	return 0;
 }
 
 int gramfs_open(const char *path, mode_t mode)
@@ -472,14 +483,14 @@ int gramfs_open(const char *path, mode_t mode)
 
 int gramfs_release(const char *path)
 {
-	//return gramfs_super->Close();
+	return 0;
 }
 
 int gramfs_read(const char *path, char *buf, size_t size, off_t offset)
 {
 	string full_path = path;
 	struct dentry *dentry = NULL;
-	lookup(full_path, dentry);
+	lookup(path, dentry);
 	if (dentry == NULL)
 		return -1;
 	if (get_dentry_flag(dentry, D_small_file) == 0)    // small file
@@ -487,13 +498,13 @@ int gramfs_read(const char *path, char *buf, size_t size, off_t offset)
 		string read_key;
 		string read_value;
 		read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
-		gramfs_super.get_datakv().get(read_key, &read_value);
-		if (size > string.size())
+		gramfs_super->get_datakv().get(read_key, &read_value);
+		if (size > read_value.size())
 		{
-			read_value.copy(buf, string.size(), 0);
-			*(buf + string.size()) = '\0';
-			offset += string.size();
-			return string.size();
+			read_value.copy(buf, read_value.size(), 0);
+			*(buf + read_value.size()) = '\0';
+			offset += read_value.size();
+			return read_value.size();
 		} else {
 			read_value.copy(buf, size, 0);
 			offset += size;
@@ -502,7 +513,7 @@ int gramfs_read(const char *path, char *buf, size_t size, off_t offset)
 	} else {
 		string read_path;
 		read_path = BIG_FILE_PATH + to_string(dentry->o_inode / 1000) + PATH_DELIMIT + to_string(dentry->o_inode);
-		int fd = open(read_path, O_RDONLY);
+		int fd = open(read_path.data(), O_RDONLY);
 		if (fd < 0)
 			return -1;
 		int ret = 0;
@@ -518,7 +529,7 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset)
 {
 	string full_path = path;
 	struct dentry *dentry = NULL;
-	lookup(full_path, dentry);
+	lookup(path, dentry);
 	if (dentry == NULL)
 		return -1;
 	if (get_dentry_flag(dentry, D_small_file) == 0)
@@ -529,18 +540,18 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset)
 		string value;
 		string write_buf;
 		read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
-		gramfs_super.get_datakv().get(read_key, &value);
+		gramfs_super->get_datakv().get(read_key, &value);
 		if (offset + size > SMALL_FILE_MAX_SIZE)
 		{
-			gramfs_super.get_datakv().remove(read_key);
+			gramfs_super->get_datakv().remove(read_key);
 			set_dentry_flag(dentry, D_small_file, NORMAL_FILE);    // set flag
 			dentry->size += size;
 			offset += size;
 			string write_path;
 			write_path = BIG_FILE_PATH + to_string(dentry->o_inode / 1000) + PATH_DELIMIT + to_string(dentry->o_inode);
-			int fd = open(write_path, O_WRONLY | O_CREAT);
+			int fd = open(write_path.data(), O_WRONLY | O_CREAT);
 			write_buf = value.substr(0, offset) + buf;
-			int ret = pwrite(fd, write_buf, dentry->size, 0);
+			int ret = pwrite(fd, write_buf.data(), dentry->size, 0);
 			if (ret < 0)
 				return -1;
 			return size;
@@ -548,10 +559,12 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset)
 			dentry->size += size;
 			offset += size;
 			write_buf = value.substr(0, offset) + buf;
-			gramfs_super->get_datakv.set(read_key, write_buf);
+			gramfs_super->get_datakv().set(read_key, write_buf);
 			return size;
 		}
 	} else {
-		int ret = ()
+		int ret = size;
+		//need write
+		return ret;
 	}
 }

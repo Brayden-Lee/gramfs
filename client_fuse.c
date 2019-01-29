@@ -1,13 +1,15 @@
 #define FUSE_USE_VERSION 30
 #include <stdio.h>
-#include <string.h>
 #include <fuse.h>
-#include <malloc.h>
 #include <stdbool.h>
-#include <utime.h>
-#include <sys/time.h>
-#include <time.h>
-#include "gramfs.h"
+#include <string>
+#include <vector>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include "fs/gramfs.h"
+
+using namespace std;
 
 
 
@@ -33,7 +35,7 @@ int fuse_create(const char * path, mode_t mode, struct fuse_file_info * info)
 
 int fuse_mkdir(const char *path, mode_t mode)
 {
-	return 0;
+	return gramfs_mkdir(path, mode);
 }
 
 int fuse_opendir(const char *path, struct fuse_file_info *fileInfo)
@@ -43,12 +45,38 @@ int fuse_opendir(const char *path, struct fuse_file_info *fileInfo)
 
 int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fileInfo)
 {
+	struct dentry *dentry = NULL;
+	char *sub_name = NULL;
+	lookup(path, dentry);
+	if (dentry == NULL)
+		return -ENOENT;
+	string read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
+	vector<string> tmp_key;
+	get_gramfs_super()->get_nodekv().match_prefix(read_key, &tmp_key, -1, NULL);
+	for (uint32_t i = 0; i < tmp_key.size(); i++)
+	{
+		sub_name = (char *)tmp_key[i].data();
+		if (filler(buf, sub_name, NULL, 0) < 0)
+		{
+			printf("filler %s error in func = %s\n", sub_name, __FUNCTION__);
+			return -1;
+		}
+		//cout<< "child "<< i << " is :" <<tmp_key[i]<<endl;
+	}
+	if (filler(buf, ".", NULL, 0) < 0) {
+		printf("filler . error in func = %s\n", __FUNCTION__);
+		return -1;
+	}
+	if (filler(buf, "..", NULL, 0) < 0) {
+		printf("filler .. error in func = %s\n", __FUNCTION__);
+		return -1;
+	}
 	return 0;
 }
 
 int fuse_getattr(const char* path, struct stat* st)
 {
-	return 0;
+	return gramfs_getattr(path, st);
 }
 
 int fuse_rmdir(const char *path)
@@ -121,13 +149,15 @@ int fuse_readlink(const char * path, char * buf, size_t size)
 	return 0;
 }
 
+/*
+// this is in C
 static struct fuse_operations fuse_ops =
 {
     //.open = fuse_open,
-    //.mkdir = fuse_mkdir,
+    .mkdir = fuse_mkdir,
     //.opendir = fuse_opendir,
-    //.readdir = fuse_readdir,
-    //.getattr = fuse_getattr,
+    .readdir = fuse_readdir,
+    .getattr = fuse_getattr,
     //.rmdir = fuse_rmdir,
     //.rename = fuse_rename,
     //.create = fuse_create,
@@ -144,6 +174,9 @@ static struct fuse_operations fuse_ops =
     //.symlink = fuse_symlink,
     //.readlink = fuse_readlink,
 };
+
+*/
+static struct fuse_operations fuse_ops;
 
 static void usage(void)
 {
@@ -174,6 +207,11 @@ int main(int argc, char * argv[])
 
 	fuse_init(fuse_argv[1], fuse_argv[2], fuse_argv[3]);
 	printf("starting fuse main...\n");
+
+	fuse_ops.mkdir = fuse_mkdir;
+	fuse_ops.readdir = fuse_readdir;
+	fuse_ops.getattr = fuse_getattr;
+	
 	ret = fuse_main(fuse_argc, fuse_argv, &fuse_ops, NULL);
 	printf("fuse main finished, ret %d\n", ret);
 	fuse_destroy();
