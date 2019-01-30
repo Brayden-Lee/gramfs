@@ -16,16 +16,16 @@ public:
 	virtual ~GramfsSuper();
 	int Open();
 	int Close();
-	PolyDB get_edgekv();
-	PolyDB get_nodekv();
-	PolyDB get_datakv();
+	string get_edgekv_name();
+	string get_nodekv_name();
+	string get_datakv_name();
 	int64_t get_curr_unique_id();
 	int64_t generate_unique_id();
-	
-private:
 	PolyDB edge_db;
 	PolyDB node_db;
 	PolyDB sf_db;
+
+private:
 	string edge_name;
 	string node_name;
 	string sf_name;

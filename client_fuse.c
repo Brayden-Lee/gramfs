@@ -52,7 +52,7 @@ int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offs
 		return -ENOENT;
 	string read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
 	vector<string> tmp_key;
-	get_gramfs_super()->get_nodekv().match_prefix(read_key, &tmp_key, -1, NULL);
+	get_gramfs_super()->node_db.match_prefix(read_key, &tmp_key, -1, NULL);
 	for (uint32_t i = 0; i < tmp_key.size(); i++)
 	{
 		sub_name = (char *)tmp_key[i].data();

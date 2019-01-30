@@ -60,19 +60,19 @@ int GramfsSuper::Close()
 	return 0;
 }
 
-PolyDB GramfsSuper::get_edgekv()
+string GramfsSuper::get_edgekv_name()
 {
-	return edge_db;
+	return edge_name;
 }
 
-PolyDB GramfsSuper::get_nodekv()
+string GramfsSuper::get_nodekv_name()
 {
-	return node_db;
+	return node_name;
 }
 
-PolyDB GramfsSuper::get_datakv()
+string GramfsSuper::get_datakv_name()
 {
-	return sf_db;
+	return sf_name;
 }
 
 int64_t GramfsSuper::get_curr_unique_id()

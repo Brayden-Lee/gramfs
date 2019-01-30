@@ -182,7 +182,7 @@ int lookup(const char *path, struct dentry *dentry)
 	plist->list_name = (char *)pre_str.data();
 	plist->part_bucket = new vector<string>();
 	plist->next = NULL;
-	gramfs_super->get_edgekv().get(pre_str, &str_dentry); // for root dentry
+	gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
 	plist->part_bucket->push_back(str_dentry);
 	q = plist;
 
@@ -194,10 +194,10 @@ int lookup(const char *path, struct dentry *dentry)
 		p->part_bucket = new vector<string>();
 		p->next = NULL;
 
-		gramfs_super->get_edgekv().match_prefix(pre_str, &tmp_key, -1, NULL);  // get all prefix key without inode
+		gramfs_super->edge_db.match_prefix(pre_str, &tmp_key, -1, NULL);  // get all prefix key without inode
 		for(uint32_t j = 0; j < tmp_key.size(); j++)
 		{
-			gramfs_super->get_edgekv().get(tmp_key[j], &pre_str);
+			gramfs_super->edge_db.get(tmp_key[j], &pre_str);
 			p->part_bucket->push_back(pre_str);  // save all value for this key
 		}
 		tmp_key.clear();
@@ -255,7 +255,7 @@ int gramfs_mkdir(const char *path, mode_t mode)
 	string add_key;
 	string add_value;
 	add_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->o_inode);
-	if (gramfs_super->get_edgekv().get(add_key, &add_value))
+	if (gramfs_super->edge_db.get(add_key, &add_value))
 	{
 		return -EEXIST;    // this dir has existed
 	}
@@ -280,12 +280,12 @@ int gramfs_mkdir(const char *path, mode_t mode)
 	char *value = (char *)calloc(1, sizeof(struct dentry));
 	serialize_dentry(add_dentry, value);
 	add_value = value;
-	gramfs_super->get_edgekv().set(add_key, add_value);
+	gramfs_super->edge_db.set(add_key, add_value);
 
 	// add to node kv
 	add_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name + PATH_DELIMIT + to_string(add_dentry->o_inode);
 	add_value = cur_name;
-	gramfs_super->get_nodekv().set(add_key, add_value);
+	gramfs_super->node_db.set(add_key, add_value);
 	return 0;
 }
 
@@ -316,17 +316,17 @@ int gramfs_rmdir(const char *path, bool rmall)
 	string rm_key;
 	rm_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
 	vector<string> tmp_key;
-	gramfs_super->get_nodekv().match_prefix(rm_key, &tmp_key, -1, NULL);
+	gramfs_super->node_db.match_prefix(rm_key, &tmp_key, -1, NULL);
 	if (tmp_key.empty())
 	{
 		rm_key = p_name + PATH_DELIMIT + dentry->dentry_name + PATH_DELIMIT + to_string(dentry->p_inode);
-		gramfs_super->get_edgekv().remove(rm_key);
+		gramfs_super->edge_db.remove(rm_key);
 		return 0;
 	} else {
 		if (rmall)
 		{
 			rm_key = p_name + PATH_DELIMIT + dentry->dentry_name + PATH_DELIMIT + to_string(dentry->p_inode);
-			gramfs_super->get_edgekv().remove(rm_key);    // no need to remove the child, because it can't be found
+			gramfs_super->edge_db.remove(rm_key);    // no need to remove the child, because it can't be found
 		} else {
 			return -1;    // not an empty dir without -r
 		}
@@ -343,7 +343,7 @@ int gramfs_readdir(const char *path)
 		return -ENOENT;
 	string read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
 	vector<string> tmp_key;
-	gramfs_super->get_nodekv().match_prefix(read_key, &tmp_key, -1, NULL);
+	gramfs_super->node_db.match_prefix(read_key, &tmp_key, -1, NULL);
 	for (uint32_t i = 0; i < tmp_key.size(); i++)
 	{
 		cout<< "child "<< i << " is :" <<tmp_key[i]<<endl;
@@ -408,7 +408,7 @@ int gramfs_create(const char *path, mode_t mode)
 	string add_key;
 	string add_value;
 	add_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->o_inode);
-	if (gramfs_super->get_edgekv().get(add_key, &add_value))
+	if (gramfs_super->edge_db.get(add_key, &add_value))
 	{
 		return -1;    // this dir has existed
 	}
@@ -434,12 +434,12 @@ int gramfs_create(const char *path, mode_t mode)
 	char *value = (char *)calloc(1, sizeof(struct dentry));
 	serialize_dentry(add_dentry, value);
 	add_value = value;
-	gramfs_super->get_edgekv().set(add_key, add_value);
+	gramfs_super->edge_db.set(add_key, add_value);
 
 	// add to node kv
 	add_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name + PATH_DELIMIT + to_string(add_dentry->o_inode);
 	add_value = cur_name;
-	gramfs_super->get_nodekv().set(add_key, add_value);
+	gramfs_super->node_db.set(add_key, add_value);
 	return 0;	
 }
 
@@ -467,9 +467,9 @@ int gramfs_unlink(const char *path)
 		return -1;
 	string rm_key;
 	rm_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->p_inode);
-	gramfs_super->get_edgekv().remove(rm_key);
+	gramfs_super->edge_db.remove(rm_key);
 	rm_key = to_string(dentry->p_inode) + PATH_DELIMIT + p_name + PATH_DELIMIT + to_string(dentry->o_inode);
-	gramfs_super->get_nodekv().remove(rm_key);
+	gramfs_super->node_db.remove(rm_key);
 	return 0;
 }
 
@@ -498,7 +498,7 @@ int gramfs_read(const char *path, char *buf, size_t size, off_t offset)
 		string read_key;
 		string read_value;
 		read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
-		gramfs_super->get_datakv().get(read_key, &read_value);
+		gramfs_super->sf_db.get(read_key, &read_value);
 		if (size > read_value.size())
 		{
 			read_value.copy(buf, read_value.size(), 0);
@@ -540,10 +540,10 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset)
 		string value;
 		string write_buf;
 		read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
-		gramfs_super->get_datakv().get(read_key, &value);
+		gramfs_super->sf_db.get(read_key, &value);
 		if (offset + size > SMALL_FILE_MAX_SIZE)
 		{
-			gramfs_super->get_datakv().remove(read_key);
+			gramfs_super->sf_db.remove(read_key);
 			set_dentry_flag(dentry, D_small_file, NORMAL_FILE);    // set flag
 			dentry->size += size;
 			offset += size;
@@ -559,7 +559,7 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset)
 			dentry->size += size;
 			offset += size;
 			write_buf = value.substr(0, offset) + buf;
-			gramfs_super->get_datakv().set(read_key, write_buf);
+			gramfs_super->sf_db.set(read_key, write_buf);
 			return size;
 		}
 	} else {
