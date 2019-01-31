@@ -46,24 +46,37 @@ int fuse_opendir(const char *path, struct fuse_file_info *fileInfo)
 
 int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fileInfo)
 {
+	int ret = 0;
 	struct dentry *dentry = NULL;
 	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	char *sub_name = NULL;
-	lookup(path, dentry);
-	if (dentry == NULL)
+	ret = lookup(path, dentry);
+	if (ret < 0)
 		return -ENOENT;
 	string read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
 	vector<string> tmp_key;
+	string read_value;
 	get_gramfs_super()->node_db.match_prefix(read_key, &tmp_key, -1, NULL);
+#ifdef GRAMFS_DEBUG
+	if (tmp_key.size() == 0)
+	{
+		get_gramfs_super()->GetLog()->LogMsg("readdir path = %s has no child\n", path);
+	}
+#endif
+	
 	for (uint32_t i = 0; i < tmp_key.size(); i++)
 	{
-		sub_name = (char *)tmp_key[i].data();
+		read_key = tmp_key[i];
+		get_gramfs_super()->node_db.get(read_key, &read_value);
+		sub_name = (char *)read_value.data();
+	#ifdef GRAMFS_DEBUG
+		get_gramfs_super()->GetLog()->LogMsg("readdir path = %s, have child key : %s\n", path, sub_name);
+	#endif
 		if (filler(buf, sub_name, NULL, 0) < 0)
 		{
 			printf("filler %s error in func = %s\n", sub_name, __FUNCTION__);
 			return -1;
 		}
-		//cout<< "child "<< i << " is :" <<tmp_key[i]<<endl;
 	}
 	if (filler(buf, ".", NULL, 0) < 0) {
 		printf("filler . error in func = %s\n", __FUNCTION__);

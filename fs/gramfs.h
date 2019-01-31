@@ -20,6 +20,7 @@ using namespace std;
 
 
 // error code
+#define ENOROOT 100
 #define ENOENT 2
 #define EIO 5
 #define EEXIST 17
