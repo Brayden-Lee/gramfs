@@ -102,6 +102,7 @@ int dentry_match(struct part_list *plist, struct dentry *dentry)
 	string str_dentry;
 	uint64_t curr_p_id = 0;    // root inode
 	bool triggle = false;
+	uint32_t vec_size = 0;
 	if (plist == NULL)
 	{
 		printf("dentry_match, this is error case\n");
@@ -112,7 +113,8 @@ int dentry_match(struct part_list *plist, struct dentry *dentry)
 	#ifdef GRAMFS_DEBUG
 		printf("dentry_match, these plist = %s, and bucket total = %d\n", plist->list_name, (int)plist->part_bucket->size());
 	#endif
-		for (uint32_t i = 0; i < plist->part_bucket->size(); i++)
+		vec_size = (uint32_t) plist->part_bucket->size();
+		for (uint32_t i = 0; i < vec_size; i++)
 		{
 			str_dentry = plist->part_bucket->back();
 			plist->part_bucket->pop_back();
@@ -142,7 +144,8 @@ int dentry_match(struct part_list *plist, struct dentry *dentry)
 		triggle = false;
 		p = plist;
 		plist = plist->next;
-		delete p;
+		delete p->part_bucket;
+		free(p);
 		p = NULL;
 	}
 #ifdef GRAMFS_DEBUG
@@ -207,7 +210,8 @@ int lookup(const char *path, struct dentry *dentry)
 	struct part_list *q = NULL;
 	pre_str = str_vector[1];
 	pre_str = string("/") + PATH_DELIMIT + pre_str + PATH_DELIMIT + to_string(0); // for second, p_inode is 0;
-	plist->list_name = (char *)pre_str.data();
+	//plist->list_name = (char *)pre_str.data();
+	strcpy(plist->list_name, pre_str.data());
 #ifdef GRAMFS_DEBUG
 	printf("lookup the first pre_str = %s, plist name = %s\n", pre_str.data(), plist->list_name);
 #endif
@@ -228,32 +232,33 @@ int lookup(const char *path, struct dentry *dentry)
 	int64_t search_count = 0;
 	for (uint32_t i = 2; i < str_vector.size(); i++)
 	{
-		pre_str = "";
+		string new_pre_str;
 		p = (struct part_list*)calloc(1, sizeof(struct part_list));
-		pre_str = str_vector[i - 1] + PATH_DELIMIT + str_vector[i];
-		p->list_name = (char *)pre_str.data();
+		new_pre_str = str_vector[i - 1] + PATH_DELIMIT + str_vector[i];
+		//p->list_name = (char *)new_pre_str.data();
+		strcpy(p->list_name, new_pre_str.data());
 	#ifdef GRAMFS_DEBUG
-		printf("lookup the %d th, pre_str = %s, plist name = %s\n", i, pre_str.data(), plist->list_name);
+		printf("lookup the %d th, pre_str = %s, plist name = %s\n", i, new_pre_str.data(), p->list_name);
 	#endif
 		p->part_bucket = new vector<string>();
 		p->next = NULL;
 
-		search_count = gramfs_super->edge_db.match_prefix(pre_str, &tmp_key, -1, NULL);  // get all prefix key without inode
+		search_count = gramfs_super->edge_db.match_prefix(new_pre_str, &tmp_key, -1, NULL);  // get all prefix key without inode
 		if (search_count <= 0)    // error case
 		{
 		#ifdef GRAMFS_DEBUG
-			printf("lookup, pre_str = %s not in edge kv\n", pre_str.data());
+			printf("lookup, pre_str = %s not in edge kv\n", new_pre_str.data());
 		#endif
 			ret = -ENOENT;
 			return ret;
 		}
 	#ifdef GRAMFS_DEBUG
-		gramfs_super->GetLog()->LogMsg("lookup, %d th sub-dentry, pre-key = %s, total  = %d\n", i, pre_str.data(), tmp_key.size());
+		gramfs_super->GetLog()->LogMsg("lookup, %d th sub-dentry, pre-key = %s, total  = %d\n", i, new_pre_str.data(), tmp_key.size());
 	#endif
 		for(uint32_t j = 0; j < tmp_key.size(); j++)
 		{
-			pre_str = "";
-			ret = gramfs_super->edge_db.get(tmp_key[j], &pre_str);
+			string tmp_value;
+			ret = gramfs_super->edge_db.get(tmp_key[j], &tmp_value);
 			if (ret == 0)    // error case
 			{
 			#ifdef GRAMFS_DEBUG
@@ -262,9 +267,9 @@ int lookup(const char *path, struct dentry *dentry)
 				ret = -EIO;
 				return ret;
 			}
-			p->part_bucket->push_back(pre_str);  // save all value for this key
+			p->part_bucket->push_back(tmp_value);  // save all value for this key
 		#ifdef GRAMFS_DEBUG
-			gramfs_super->GetLog()->LogMsg("lookup : %s, dentry : %s\n", tmp_key[j].data(), pre_str.data());
+			gramfs_super->GetLog()->LogMsg("lookup : %s, dentry : %s\n", tmp_key[j].data(), tmp_value.data());
 		#endif
 		}
 		tmp_key.clear();
@@ -512,6 +517,8 @@ int gramfs_rename(const char *path, const char *newpath)
 
 int gramfs_create(const char *path, mode_t mode)
 {
+	int ret = 0;
+	int fd = 0;
 	string full_path = path;
 	string p_path;
 	string cur_name;
@@ -522,51 +529,68 @@ int gramfs_create(const char *path, mode_t mode)
 		p_path = PATH_DELIMIT;
 		p_name = PATH_DELIMIT;
 		cur_name = full_path.substr(index + 1, full_path.size());
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("create path = %s is a child of root, his name = %s\n", path, cur_name.data());
+	#endif
 	} else {
 		p_path = full_path.substr(0, index);
 		cur_name = full_path.substr(index + 1, full_path.size());
 		index = p_path.find_last_of(PATH_DELIMIT);
 		p_name = p_path.substr(index + 1, p_path.size());
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("create path = %s is not a child of root, his name = %s, p_name = %s\n", path, cur_name.data(),p_name.data());
+	#endif
 	}
 	struct dentry *dentry = NULL;
 	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
-	lookup(p_path.data(), dentry);
-	if (dentry == NULL)
-		return -1;
+	ret = lookup(p_path.data(), dentry);
+	if (ret < 0)
+		return -ENOTDIR;
+	if (get_dentry_flag(dentry, D_type) == FILE_DENTRY)
+		return -ENOTDIR;
 	string add_key;
 	string add_value;
 	add_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->o_inode);
 	if (gramfs_super->edge_db.get(add_key, &add_value))
 	{
-		return -1;    // this dir has existed
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("create, you created file = %s exists in the namespace\n", cur_name.data());
+	#endif
+		return -EEXIST;    // this dir has existed
 	}
 	struct dentry *add_dentry = (struct dentry *)calloc(1, sizeof(struct dentry));
 	add_dentry->o_inode = gramfs_super->generate_unique_id();
+	fd = add_dentry->o_inode;    // record the created inode as open description
 	add_dentry->p_inode = dentry->o_inode;
 	cur_name.copy(add_dentry->dentry_name, cur_name.size(), 0);
 	*(add_dentry->dentry_name + cur_name.size()) = '\0';
-	//add_dentry->flags = 1;    // file
 	set_dentry_flag(add_dentry, D_type, FILE_DENTRY);
 	set_dentry_flag(add_dentry, D_small_file, SMALL_FILE);
-	add_dentry->mode = S_IFDIR | 0755;
+	add_dentry->mode = S_IFREG | 0755;
 	add_dentry->ctime = time(NULL);
 	add_dentry->mtime = time(NULL);
 	add_dentry->atime = time(NULL);
-	cur_name.copy(add_dentry->dentry_name,cur_name.size(),0);
-	*(add_dentry->dentry_name + cur_name.size()) = '\0';
-	//add_dentry->dentry_name = cur_name;
 	add_dentry->nlink = 0;
 	add_dentry->gid = getgid();
 	add_dentry->uid = getuid();
 	add_dentry->size = 0;
 	add_value = serialize_dentry(add_dentry);
-	gramfs_super->edge_db.set(add_key, add_value);
-
+	ret = gramfs_super->edge_db.set(add_key, add_value);
+	if (ret == 0)
+		return -EIO;
+#ifdef GRAMFS_DEBUG
+	gramfs_super->GetLog()->LogMsg("create, create edge key = %s with ret = %d\n", add_key.data(), ret);
+#endif
 	// add to node kv
 	add_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name + PATH_DELIMIT + to_string(add_dentry->o_inode);
 	add_value = cur_name;
-	gramfs_super->node_db.set(add_key, add_value);
-	return 0;	
+	ret = gramfs_super->node_db.set(add_key, add_value);
+	if (ret == 0)
+		return -EIO;
+#ifdef GRAMFS_DEBUG
+	gramfs_super->GetLog()->LogMsg("create, create node key = %s with ret = %d\n", add_key.data(), ret);
+#endif
+	return fd;	
 }
 
 int gramfs_unlink(const char *path)
@@ -603,9 +627,31 @@ int gramfs_unlink(const char *path)
 int gramfs_open(const char *path, mode_t mode)
 {
 	int ret = 0;
+	int fd = 0;
 	if ((mode & O_CREAT) == 0)
 		return gramfs_create(path, mode);
-	return ret;
+	struct dentry *dentry = NULL;
+	dentry = (struct dentry *)calloc(1, sizeof(struct dentry));
+	ret = lookup(path, dentry);
+	if (ret < 0)
+		return -ENOENT;
+	if (get_dentry_flag(dentry, D_type) == DIR_DENTRY)
+		return -EISDIR;
+	if (get_dentry_flag(dentry, D_small_file) == SMALL_FILE)
+	{
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("open, is a small file just reture the inode = %d, as file description\n", (int)dentry->o_inode);
+	#endif
+		return dentry->o_inode;
+	} else {
+		string read_path;
+		read_path = BIG_FILE_PATH + to_string(dentry->o_inode / 1000) + PATH_DELIMIT + to_string(dentry->o_inode);
+		fd = open(read_path.data(), mode | O_CREAT);
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("open, not a small file, big file path = %s, fd = %d\n", read_path.data(), fd);
+	#endif
+		return fd;
+	}
 }
 
 int gramfs_release(const char *path)

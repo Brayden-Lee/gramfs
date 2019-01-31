@@ -26,12 +26,23 @@ void fuse_destroy()
 
 int fuse_open(const char *path, struct fuse_file_info *fileInfo)
 {
-	return 0;
+	int fd = 0;
+	mode_t mode = fileInfo->flags;
+	fd = gramfs_open(path, mode);
+	fileInfo->fh = (uint64_t)fd;
+	if (fd > 0)
+		fd = 0;
+	return fd;
 }
 
 int fuse_create(const char * path, mode_t mode, struct fuse_file_info * info)
 {
-	return 0;
+	int fd = 0;
+	fd = gramfs_create(path, mode);
+	info->fh = (uint64_t)fd;
+	if (fd > 0)
+		fd = 0;
+	return fd;
 }
 
 int fuse_mkdir(const char *path, mode_t mode)
@@ -232,6 +243,8 @@ int main(int argc, char * argv[])
 	fuse_ops.mkdir = fuse_mkdir;
 	fuse_ops.readdir = fuse_readdir;
 	fuse_ops.getattr = fuse_getattr;
+	fuse_ops.create = fuse_create;
+	fuse_ops.open = fuse_open;
 	
 	ret = fuse_main(fuse_argc, fuse_argv, &fuse_ops, NULL);
 	printf("fuse main finished, ret %d\n", ret);

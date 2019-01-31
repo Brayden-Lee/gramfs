@@ -56,7 +56,7 @@ enum dentryflags
 };
 	
 struct part_list {
-	char *list_name;
+	char list_name[DENTRY_NAME_LEN * 2 + 2];
 	vector<string> *part_bucket;    // store the value (kv) of this node
 	struct part_list *next;
 };
@@ -72,6 +72,7 @@ int gramfs_readdir(const char *path);
 int gramfs_releasedir(const char *path);
 int gramfs_getattr(const char *path, struct stat *st);
 int gramfs_rename(const char *path, const char *newpath);
+int gramfs_create(const char *path, mode_t mode);
 int gramfs_open(const char *path, mode_t mode);
 int gramfs_release(const char *path);
 int gramfs_read(const char *path, char *buf, size_t size, off_t offset);
