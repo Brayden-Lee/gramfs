@@ -1,4 +1,6 @@
 #include <iostream>
+#include <stdlib.h>
+#include <cstring>
 #include <kcpolydb.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -33,62 +35,6 @@ int get_dentry_flag(struct dentry *dentry, int flag_type)
 	}
 }
 
-void serialize_dentry(struct dentry *dentry, char *outBuf)
-{
-	int pos = 0;
-	memcpy(&outBuf[pos], &(dentry->p_inode), sizeof(dentry->p_inode));
-	pos += sizeof(dentry->p_inode);
-	memcpy(&outBuf[pos], &(dentry->o_inode), sizeof(dentry->o_inode));
-	pos += sizeof(dentry->o_inode);
-	memcpy(&outBuf[pos], &(dentry->dentry_name), sizeof(char) * DENTRY_NAME_LEN);
-	pos += sizeof(char) * DENTRY_NAME_LEN;
-	memcpy(&outBuf[pos], &(dentry->flags), sizeof(dentry->flags));
-	pos += sizeof(dentry->flags);
-	memcpy(&outBuf[pos], &(dentry->mode), sizeof(dentry->mode));
-	pos += sizeof(dentry->mode);
-	memcpy(&outBuf[pos], &(dentry->ctime), sizeof(dentry->ctime));
-	pos += sizeof(dentry->ctime);
-	memcpy(&outBuf[pos], &(dentry->mtime), sizeof(dentry->mtime));
-	pos += sizeof(dentry->mtime);
-	memcpy(&outBuf[pos], &(dentry->atime), sizeof(dentry->atime));
-	pos += sizeof(dentry->atime);
-	memcpy(&outBuf[pos], &(dentry->size), sizeof(dentry->size));
-	pos += sizeof(dentry->size);
-	memcpy(&outBuf[pos], &(dentry->uid), sizeof(dentry->uid));
-	pos += sizeof(dentry->uid);
-	memcpy(&outBuf[pos], &(dentry->gid), sizeof(dentry->gid));
-	pos += sizeof(dentry->gid);
-	memcpy(&outBuf[pos], &(dentry->nlink), sizeof(dentry->nlink));	
-}
-
-void deserialize_dentry(const char * buf, struct dentry *dentry)
-{
-	int pos = 0;
-	memcpy(&(dentry->p_inode), &buf[pos], sizeof(dentry->p_inode));
-	pos += sizeof(dentry->p_inode);
-	memcpy(&(dentry->o_inode), &buf[pos], sizeof(dentry->o_inode));
-	pos += sizeof(dentry->o_inode);
-	memcpy(&(dentry->dentry_name), &buf[pos], sizeof(char) * DENTRY_NAME_LEN);
-	pos += sizeof(char) * DENTRY_NAME_LEN;
-	memcpy(&(dentry->flags), &buf[pos], sizeof(dentry->flags));
-	pos += sizeof(dentry->flags);
-	memcpy(&(dentry->mode), &buf[pos], sizeof(dentry->mode));
-	pos += sizeof(dentry->mode);
-	memcpy(&(dentry->ctime), &buf[pos], sizeof(dentry->ctime));
-	pos += sizeof(dentry->ctime);
-	memcpy(&(dentry->mtime), &buf[pos], sizeof(dentry->mtime));
-	pos += sizeof(dentry->mtime);
-	memcpy(&(dentry->atime), &buf[pos], sizeof(dentry->atime));
-	pos += sizeof(dentry->atime);
-	memcpy(&(dentry->size), &buf[pos], sizeof(dentry->size));
-	pos += sizeof(dentry->size);
-	memcpy(&(dentry->uid), &buf[pos], sizeof(dentry->uid));
-	pos += sizeof(dentry->uid);
-	memcpy(&(dentry->gid), &buf[pos], sizeof(dentry->gid));
-	pos += sizeof(dentry->gid);
-	memcpy(&(dentry->nlink), &buf[pos], sizeof(dentry->nlink));	
-}
-
 // for /a/b/c/d/e ==> ' ','a','b','c','d','e'
 void split_path(const string& src, const string& separator, vector<string>& dest)
 {
@@ -114,9 +60,45 @@ void split_path(const string& src, const string& separator, vector<string>& dest
 	dest.push_back(substring);
 }
 
+string serialize_dentry(struct dentry *dentry)
+{
+	string str = "";
+	str += to_string(dentry->p_inode) + KC_VALUE_DELIMIT;
+	str += to_string(dentry->o_inode) + KC_VALUE_DELIMIT;
+	str += dentry->dentry_name + string(KC_VALUE_DELIMIT);
+	str += to_string(dentry->flags) + KC_VALUE_DELIMIT;
+	str += to_string(dentry->mode) + KC_VALUE_DELIMIT;
+	str += to_string(dentry->ctime) + KC_VALUE_DELIMIT;
+	str += to_string(dentry->mtime) + KC_VALUE_DELIMIT;
+	str += to_string(dentry->atime) + KC_VALUE_DELIMIT;
+	str += to_string(dentry->size) + KC_VALUE_DELIMIT;
+	str += to_string(dentry->uid) + KC_VALUE_DELIMIT;
+	str += to_string(dentry->gid) + KC_VALUE_DELIMIT;
+	str += to_string(dentry->nlink);
+	return str;
+}
+
+void deserialize_dentry(const string str, struct dentry *dentry)
+{
+	vector<string> str_vector;
+	split_path(str, KC_VALUE_DELIMIT, str_vector);
+	dentry->p_inode = stoull(str_vector[0].c_str());
+	dentry->o_inode = stoull(str_vector[1].c_str());
+	strcpy(dentry->dentry_name, str_vector[2].data());
+	dentry->flags = stoul(str_vector[3].c_str());
+	dentry->mode = stoul(str_vector[4].c_str());
+	dentry->ctime = stoul(str_vector[5].c_str());
+	dentry->mtime = stoul(str_vector[6].c_str());
+	dentry->atime = stoul(str_vector[7].c_str());
+	dentry->size = stoul(str_vector[8].c_str());
+	dentry->uid = stoul(str_vector[9].c_str());
+	dentry->gid = stoul(str_vector[10].c_str());
+	dentry->nlink = stoul(str_vector[11].c_str());
+}
+
 struct dentry* dentry_match(struct part_list *plist)
 {
-	struct dentry* dentry = (struct dentry*)malloc(sizeof(struct dentry));
+	struct dentry* dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	struct part_list *p;
 	string str_dentry = NULL;
 	uint32_t curr_id = 0;    // root inode
@@ -133,7 +115,7 @@ struct dentry* dentry_match(struct part_list *plist)
 		{
 			str_dentry = plist->part_bucket->front();
 			plist->part_bucket->pop_back();
-			deserialize_dentry(str_dentry.data(), dentry);
+			deserialize_dentry(str_dentry, dentry);
 			if (dentry->p_inode == curr_id)
 			{
 				plist->part_bucket->clear();
@@ -172,6 +154,24 @@ int lookup(const char *path, struct dentry *dentry)
 	string pre_str;
 	string str_dentry;
 
+	int ret = 0;
+	if (strcmp(path, PATH_DELIMIT) == 0)
+	{ // for lookup "/"
+		string root_key;
+		string root_value;
+		root_key = "//0";
+		ret = gramfs_super->edge_db.get(root_key, &root_value);
+		printf("look up (root) ret = %d, get value = %s\n", ret, root_value.data());
+		if (ret < 0)
+			return ret;
+		else
+			ret = 0;
+		deserialize_dentry(root_value, dentry);
+	#ifdef GRAMFS_DEBUG
+		printf("this is root dentry, get ret = %d\n", ret);
+	#endif
+		return ret;
+	}
 	split_path(path, "/", str_vector);
 
 	struct part_list * plist = (struct part_list*)malloc(sizeof(struct part_list));
@@ -186,6 +186,9 @@ int lookup(const char *path, struct dentry *dentry)
 	plist->part_bucket->push_back(str_dentry);
 	q = plist;
 
+#ifdef GRAMFS_DEBUG
+	gramfs_super->GetLog()->LogMsg("lookup : %s, dentry : %s\n", pre_str.data(), str_dentry.data());
+#endif
 	for (uint32_t i = 2; i < str_vector.size(); i++)
 	{
 		p = (struct part_list*)malloc(sizeof(struct part_list));
@@ -199,6 +202,9 @@ int lookup(const char *path, struct dentry *dentry)
 		{
 			gramfs_super->edge_db.get(tmp_key[j], &pre_str);
 			p->part_bucket->push_back(pre_str);  // save all value for this key
+		#ifdef GRAMFS_DEBUG
+			gramfs_super->GetLog()->LogMsg("lookup : %s, dentry : %s\n", tmp_key[i].data(), pre_str.data());
+		#endif
 		}
 		tmp_key.clear();
 		q->next = p;
@@ -212,11 +218,39 @@ int lookup(const char *path, struct dentry *dentry)
 		return 0;
 }
 
-// user api
+// ============== user api ==================
+
+// root should be created first!
 int gramfs_init(const char *edgepath, const char *nodepath, const char *sfpath)
 {
+	int ret = 0;
 	gramfs_super = new GramfsSuper(edgepath, nodepath, sfpath);
-	return gramfs_super->Open();
+	ret = gramfs_super->Open();
+	if (ret < 0)
+		return ret;
+	struct dentry *root_dentry = (struct dentry *)calloc(1, sizeof(struct dentry));
+	string add_key;
+	string add_value;
+	root_dentry->o_inode = 0;
+	root_dentry->p_inode = 0;
+	//root_dentry->dentry_name = "/";
+	strcpy(root_dentry->dentry_name, "/");
+	set_dentry_flag(root_dentry, D_type, DIR_DENTRY);
+	root_dentry->mode = S_IFDIR | 0755;
+	root_dentry->ctime = time(NULL);
+	root_dentry->mtime = time(NULL);
+	root_dentry->atime = time(NULL);
+	root_dentry->nlink = 0;
+	root_dentry->gid = getgid();
+	root_dentry->uid = getuid();
+	root_dentry->size = 0;
+	add_value = serialize_dentry(root_dentry);
+	add_key = PATH_DELIMIT + string(PATH_DELIMIT) + to_string(root_dentry->o_inode);
+	ret = gramfs_super->edge_db.set(add_key, add_value);
+#ifdef GRAMFS_DEBUG
+	gramfs_super->GetLog()->LogMsg("gramfs init root entry key = %s, value = %s, with ret = %d\n", add_key.data(), add_value.data(), ret);
+#endif
+	return ret;
 }
 
 void gramfs_destroy()
@@ -249,6 +283,7 @@ int gramfs_mkdir(const char *path, mode_t mode)
 		p_name = p_path.substr(index + 1, p_path.size());
 	}
 	struct dentry *dentry = NULL;
+	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	lookup(p_path.data(), dentry);
 	if (dentry == NULL)
 		return -ENOTDIR;    // parent not exist
@@ -277,9 +312,7 @@ int gramfs_mkdir(const char *path, mode_t mode)
 	add_dentry->gid = getgid();
 	add_dentry->uid = getuid();
 	add_dentry->size = 0;
-	char *value = (char *)calloc(1, sizeof(struct dentry));
-	serialize_dentry(add_dentry, value);
-	add_value = value;
+	add_value = serialize_dentry(add_dentry);
 	gramfs_super->edge_db.set(add_key, add_value);
 
 	// add to node kv
@@ -310,6 +343,7 @@ int gramfs_rmdir(const char *path, bool rmall)
 		p_name = p_path.substr(index + 1, p_path.size());
 	}
 	struct dentry *dentry = NULL;
+	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	lookup(path, dentry);
 	if (dentry == NULL)
 		return -1;    // path not exist
@@ -338,6 +372,7 @@ int gramfs_readdir(const char *path)
 {
 	string full_path = path;
 	struct dentry *dentry = NULL;
+	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	lookup(path, dentry);
 	if (dentry == NULL)
 		return -ENOENT;
@@ -363,9 +398,14 @@ int gramfs_releasedir(const char *path)
 
 int gramfs_getattr(const char *path, struct stat *st)
 {
+	int ret = 0;
 	string full_path = path;
 	struct dentry *dentry  = NULL;
-	lookup(path, dentry);
+	dentry = (struct dentry *)calloc(1, sizeof(struct dentry));
+#ifdef GRAMFS_DEBUG	
+	gramfs_super->GetLog()->LogMsg("getattr: %s\n", path);
+#endif
+	ret = lookup(path, dentry);
 	if (dentry == NULL)
 		return -ENOENT;
 	st->st_mtime = dentry->ctime;
@@ -375,7 +415,7 @@ int gramfs_getattr(const char *path, struct stat *st)
 	st->st_nlink = dentry->nlink;
 	st->st_size = dentry->size;
 	st->st_mode = dentry->mode;
-	return 0;
+	return ret;
 }
 
 int gramfs_rename(const char *path, const char *newpath)
@@ -402,6 +442,7 @@ int gramfs_create(const char *path, mode_t mode)
 		p_name = p_path.substr(index + 1, p_path.size());
 	}
 	struct dentry *dentry = NULL;
+	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	lookup(p_path.data(), dentry);
 	if (dentry == NULL)
 		return -1;
@@ -431,9 +472,7 @@ int gramfs_create(const char *path, mode_t mode)
 	add_dentry->gid = getgid();
 	add_dentry->uid = getuid();
 	add_dentry->size = 0;
-	char *value = (char *)calloc(1, sizeof(struct dentry));
-	serialize_dentry(add_dentry, value);
-	add_value = value;
+	add_value = serialize_dentry(add_dentry);
 	gramfs_super->edge_db.set(add_key, add_value);
 
 	// add to node kv
@@ -462,6 +501,7 @@ int gramfs_unlink(const char *path)
 		p_name = p_path.substr(index + 1, p_path.size());
 	}
 	struct dentry *dentry = NULL;
+	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	lookup(path, dentry);
 	if (dentry == NULL)
 		return -1;
@@ -490,6 +530,7 @@ int gramfs_read(const char *path, char *buf, size_t size, off_t offset)
 {
 	string full_path = path;
 	struct dentry *dentry = NULL;
+	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	lookup(path, dentry);
 	if (dentry == NULL)
 		return -1;
@@ -529,6 +570,7 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset)
 {
 	string full_path = path;
 	struct dentry *dentry = NULL;
+	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	lookup(path, dentry);
 	if (dentry == NULL)
 		return -1;

@@ -3,6 +3,7 @@
 
 
 #include <string>
+#include <cstdarg>
 #include <cstdio>
 #include <sys/stat.h>
 
@@ -20,6 +21,6 @@ public:
 	void Open();
 	void LogMsg(const char *format, ...);
 	virtual ~Logging();
-}
+};
 
 #endif

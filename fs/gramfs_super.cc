@@ -8,16 +8,22 @@ GramfsSuper::~GramfsSuper()
 GramfsSuper::GramfsSuper() : edge_name("/tmp/edge.kch"), node_name("/tmp/node.kct"), sf_name("/tmp/data.kct")
 {
 	curr_unique_id = 0;
+	logs = new Logging();
+	logs->Open();
 }
 
 GramfsSuper::GramfsSuper(const char *edgepath, const char*nodepath, const char *sfpath) : edge_name(edgepath), node_name(nodepath), sf_name(sfpath)
 {
 	curr_unique_id = 0;
+	logs = new Logging();
+	logs->Open();
 }
 
 GramfsSuper::GramfsSuper(const string edgepath, const string nodepath, const string sfpath) : edge_name(edgepath), node_name(nodepath), sf_name(sfpath)
 {
 	curr_unique_id = 0;
+	logs = new Logging();
+	logs->Open();
 }
 
 int GramfsSuper::Open()
@@ -73,6 +79,11 @@ string GramfsSuper::get_nodekv_name()
 string GramfsSuper::get_datakv_name()
 {
 	return sf_name;
+}
+
+Logging* GramfsSuper::GetLog()
+{
+	return logs;
 }
 
 int64_t GramfsSuper::get_curr_unique_id()

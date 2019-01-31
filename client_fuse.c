@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include "tools/logging.h"
 #include "fs/gramfs.h"
 
 using namespace std;
@@ -46,6 +47,7 @@ int fuse_opendir(const char *path, struct fuse_file_info *fileInfo)
 int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fileInfo)
 {
 	struct dentry *dentry = NULL;
+	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	char *sub_name = NULL;
 	lookup(path, dentry);
 	if (dentry == NULL)
@@ -154,10 +156,10 @@ int fuse_readlink(const char * path, char * buf, size_t size)
 static struct fuse_operations fuse_ops =
 {
     //.open = fuse_open,
-    .mkdir = fuse_mkdir,
+    //.mkdir = fuse_mkdir,
     //.opendir = fuse_opendir,
-    .readdir = fuse_readdir,
-    .getattr = fuse_getattr,
+    //.readdir = fuse_readdir,
+    //.getattr = fuse_getattr,
     //.rmdir = fuse_rmdir,
     //.rename = fuse_rename,
     //.create = fuse_create,
@@ -205,9 +207,15 @@ int main(int argc, char * argv[])
 		}
 	}
 
-	fuse_init(fuse_argv[1], fuse_argv[2], fuse_argv[3]);
+	// for test begin
+	string edgepath = "/mnt/myfs/edge.kch";
+	string nodepath = "/mnt/myfs/node.kch";
+	string datapath = "/mnt/myfs/sf.kch";
+	// for test end
+	fuse_init(edgepath.data(), nodepath.data(), datapath.data());
 	printf("starting fuse main...\n");
 
+	// hook the file operations
 	fuse_ops.mkdir = fuse_mkdir;
 	fuse_ops.readdir = fuse_readdir;
 	fuse_ops.getattr = fuse_getattr;

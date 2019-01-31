@@ -1,5 +1,4 @@
 #include "logging.h"
-#include <sys/stat.h>
 
 Logging::~Logging() 
 {

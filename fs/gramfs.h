@@ -9,8 +9,12 @@
 
 using namespace std;
 
+// DEBUG
+#define GRAMFS_DEBUG
+
 #define DENTRY_NAME_LEN 32
 #define PATH_DELIMIT "/"
+#define KC_VALUE_DELIMIT "&"
 #define BIG_FILE_PATH "/mnt/bigfile/"
 #define SMALL_FILE_MAX_SIZE 4 * 1024
 
