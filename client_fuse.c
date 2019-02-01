@@ -135,6 +135,16 @@ int fuse_write(const char *path, const char *buf, size_t size, off_t offset, str
 
 int fuse_release(const char *path, struct fuse_file_info *fileInfo)
 {
+	int ret = 0;
+	int fd = (int) fileInfo->fh;
+	if (fd < 0)
+		return -EBADF;
+	if (fileInfo->fh == 0)
+		return 0;
+	ret = close(fd);
+	if (ret != 0)
+		return -EIO;
+	fileInfo->fh = -1;
 	return 0;
 }
 
@@ -258,6 +268,7 @@ int main(int argc, char * argv[])
 	fuse_ops.read = fuse_read;
 	fuse_ops.write = fuse_write;
 	fuse_ops.utimens = fuse_utimens;
+	fuse_ops.release = fuse_release;
 	
 	ret = fuse_main(fuse_argc, fuse_argv, &fuse_ops, NULL);
 	printf("fuse main finished, ret %d\n", ret);

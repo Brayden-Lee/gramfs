@@ -609,7 +609,8 @@ int gramfs_create(const char *path, mode_t mode)
 #ifdef GRAMFS_DEBUG
 	gramfs_super->GetLog()->LogMsg("create, create node key = %s with ret = %d\n", add_key.data(), ret);
 #endif
-	return fd;	
+	//return fd;	
+	return 0;
 }
 
 int gramfs_unlink(const char *path)
@@ -681,13 +682,39 @@ int gramfs_open(const char *path, mode_t mode)
 {
 	int ret = 0;
 	int fd = 0;
-	if ((mode & O_CREAT) == 0)
-		return gramfs_create(path, mode);
+	string full_path = path;
+	string p_path;
+	string cur_name;
+	string p_name;
+	int index = full_path.find_last_of(PATH_DELIMIT);
+	if (index == 0)
+	{
+		p_path = PATH_DELIMIT;
+		p_name = PATH_DELIMIT;
+		cur_name = full_path.substr(index + 1, full_path.size());
+	} else {
+		p_path = full_path.substr(0, index);
+		cur_name = full_path.substr(index + 1, full_path.size());
+		index = p_path.find_last_of(PATH_DELIMIT);
+		p_name = p_path.substr(index + 1, p_path.size());
+	}	
 	struct dentry *dentry = NULL;
 	dentry = (struct dentry *)calloc(1, sizeof(struct dentry));
-	ret = lookup(path, dentry);
+	ret = lookup(p_path.data(), dentry);
 	if (ret < 0)
 		return -ENOENT;
+	if (get_dentry_flag(dentry, D_type) == FILE_DENTRY)
+		return -ENOTDIR;
+	string key;
+	string value;
+	key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->o_inode);
+	if (gramfs_super->edge_db.get(key, &value) == 0)
+	{
+		if ((mode & O_CREAT) == 0)
+			return -ENOENT;
+		return gramfs_create(path, mode);
+	}
+	deserialize_dentry(value, dentry);
 	if (get_dentry_flag(dentry, D_type) == DIR_DENTRY)
 		return -EISDIR;
 	if (get_dentry_flag(dentry, D_small_file) == SMALL_FILE)
@@ -695,7 +722,8 @@ int gramfs_open(const char *path, mode_t mode)
 	#ifdef GRAMFS_DEBUG
 		gramfs_super->GetLog()->LogMsg("open, is a small file just reture the inode = %d, as file description\n", (int)dentry->o_inode);
 	#endif
-		return dentry->o_inode;
+		//return dentry->o_inode;
+		return 0;
 	} else {
 		string read_path;
 		read_path = BIG_FILE_PATH + to_string(dentry->o_inode / 1000) + PATH_DELIMIT + to_string(dentry->o_inode);
@@ -738,7 +766,7 @@ int gramfs_read(const char *path, char *buf, size_t size, off_t offset, int fd =
 		#endif
 		if (size > read_value.size())
 		{
-			read_value.copy(buf, read_value.size(), 0);
+			read_value.copy(buf, read_value.size(), offset);
 			*(buf + read_value.size()) = '\0';
 			offset += read_value.size();
 			return read_value.size();
@@ -776,7 +804,7 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset, i
 	ret = lookup(path, dentry);
 	if (ret < 0)
 		return -ENOENT;
-	if (get_dentry_flag(dentry, D_type) == DIR_DENTRY);
+	if (get_dentry_flag(dentry, D_type) == DIR_DENTRY)
 		return -EISDIR;
 	if (get_dentry_flag(dentry, D_small_file) == SMALL_FILE)
 	{
