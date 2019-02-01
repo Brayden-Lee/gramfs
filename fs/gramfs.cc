@@ -412,6 +412,7 @@ int gramfs_mkdir(const char *path, mode_t mode)
 
 int gramfs_rmdir(const char *path, bool rmall)
 {
+	int ret = 0;
 	string full_path = path;
 	if (full_path == "/")
 		return -1;    // cannot remove root
@@ -432,28 +433,44 @@ int gramfs_rmdir(const char *path, bool rmall)
 	}
 	struct dentry *dentry = NULL;
 	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
-	lookup(path, dentry);
-	if (dentry == NULL)
-		return -1;    // path not exist
+	ret = lookup(path, dentry);
+	if (ret < 0)
+		return -ENOENT;    // path not exist
+	if (get_dentry_flag(dentry, D_type) == FILE_DENTRY)
+		return -ENOTDIR;
 	string rm_key;
 	rm_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
 	vector<string> tmp_key;
 	gramfs_super->node_db.match_prefix(rm_key, &tmp_key, -1, NULL);
-	if (tmp_key.empty())
+	if (tmp_key.empty())    // this is an empty dir (remove directly)
 	{
 		rm_key = p_name + PATH_DELIMIT + dentry->dentry_name + PATH_DELIMIT + to_string(dentry->p_inode);
-		gramfs_super->edge_db.remove(rm_key);
+		ret = gramfs_super->edge_db.remove(rm_key);
+		if (ret == 0)
+		{
+		#ifdef GRAMFS_DEBUG
+			gramfs_super->GetLog()->LogMsg("remove, rm the empty dir = %s failed!\n", cur_name.data());
+		#endif
+			return -EIO;
+		}
 		return 0;
 	} else {
 		if (rmall)
 		{
 			rm_key = p_name + PATH_DELIMIT + dentry->dentry_name + PATH_DELIMIT + to_string(dentry->p_inode);
-			gramfs_super->edge_db.remove(rm_key);    // no need to remove the child, because it can't be found
+			ret = gramfs_super->edge_db.remove(rm_key);    // no need to remove the child, because it can't be found
+			if (ret == 0)
+			{
+			#ifdef GRAMFS_DEBUG
+				gramfs_super->GetLog()->LogMsg("remove, rm the empty dir = %s failed!\n", cur_name.data());
+			#endif
+				return -EIO;
+			}
+			return 0;		
 		} else {
-			return -1;    // not an empty dir without -r
+			return -ENOTEMPTY;    // not an empty dir without -r
 		}
 	}
-	return 0;
 }
 
 int gramfs_readdir(const char *path)
@@ -465,6 +482,8 @@ int gramfs_readdir(const char *path)
 	ret = lookup(path, dentry);
 	if (ret < 0)
 		return -ENOENT;
+	if (get_dentry_flag(dentry, D_type) == FILE_DENTRY)
+		return -ENOTDIR;
 	string read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
 	vector<string> tmp_key;
 	string read_value;
@@ -595,6 +614,7 @@ int gramfs_create(const char *path, mode_t mode)
 
 int gramfs_unlink(const char *path)
 {
+	int ret = 0;
 	string full_path = path;
 	string p_path;
 	string cur_name;
@@ -613,14 +633,47 @@ int gramfs_unlink(const char *path)
 	}
 	struct dentry *dentry = NULL;
 	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
-	lookup(path, dentry);
-	if (dentry == NULL)
-		return -1;
+	ret = lookup(path, dentry);
+	if (ret < 0)
+		return -ENOENT;
+	if (get_dentry_flag(dentry, D_type) == DIR_DENTRY)
+		return -EISDIR;
 	string rm_key;
 	rm_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->p_inode);
-	gramfs_super->edge_db.remove(rm_key);
+	ret = gramfs_super->edge_db.remove(rm_key);
+	if (ret == 0)
+	{
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("unlink, path = %s not in edge kv (error)\n", path);
+	#endif
+		return -EIO;
+	}
 	rm_key = to_string(dentry->p_inode) + PATH_DELIMIT + p_name + PATH_DELIMIT + to_string(dentry->o_inode);
-	gramfs_super->node_db.remove(rm_key);
+	ret = gramfs_super->node_db.remove(rm_key);	
+	if (ret == 0)
+	{
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("unlink, path = %s not in edge kv (error)\n", path);
+	#endif
+		return -EIO;
+	}
+
+	// following seems redundant
+	if (get_dentry_flag(dentry, D_small_file) == SMALL_FILE)    // for small file
+	{
+		rm_key = to_string(dentry->o_inode) + cur_name;
+		gramfs_super->sf_db.remove(rm_key);    // remove the data
+	} else {
+		rm_key = BIG_FILE_PATH + to_string(dentry->o_inode / 1000) + PATH_DELIMIT + to_string(dentry->o_inode);
+		if (access(rm_key.data(), F_OK) != 0)
+		{
+		#ifdef GRAMFS_DEBUG
+			gramfs_super->GetLog()->LogMsg("unlink, path = %s not exist this big file (error)\n", path);
+		#endif
+			return -EIO;
+		}
+		remove(rm_key.data());
+	}
 	return 0;
 }
 
@@ -659,20 +712,30 @@ int gramfs_release(const char *path)
 	return 0;
 }
 
-int gramfs_read(const char *path, char *buf, size_t size, off_t offset)
+int gramfs_read(const char *path, char *buf, size_t size, off_t offset, int fd = 0)
 {
+	int ret = 0;
+	int new_fd = fd;
 	string full_path = path;
 	struct dentry *dentry = NULL;
 	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
-	lookup(path, dentry);
-	if (dentry == NULL)
-		return -1;
-	if (get_dentry_flag(dentry, D_small_file) == 0)    // small file
+	ret = lookup(path, dentry);
+	if (ret < 0)
+		return -ENOENT;
+	if (get_dentry_flag(dentry, D_type) == DIR_DENTRY)
+		return -EISDIR;
+	if (get_dentry_flag(dentry, D_small_file) == SMALL_FILE)    // small file
 	{
+	#ifdef GRAMFS_DEBUG
+		printf("read, dentry is small file\n");
+	#endif
 		string read_key;
 		string read_value;
 		read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
 		gramfs_super->sf_db.get(read_key, &read_value);
+		#ifdef GRAMFS_DEBUG
+			gramfs_super->GetLog()->LogMsg("read, from data kv get cont = %s\n", read_value.data());
+		#endif
 		if (size > read_value.size())
 		{
 			read_value.copy(buf, read_value.size(), 0);
@@ -687,30 +750,46 @@ int gramfs_read(const char *path, char *buf, size_t size, off_t offset)
 	} else {
 		string read_path;
 		read_path = BIG_FILE_PATH + to_string(dentry->o_inode / 1000) + PATH_DELIMIT + to_string(dentry->o_inode);
-		int fd = open(read_path.data(), O_RDONLY);
-		if (fd < 0)
-			return -1;
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("read, from big file path = %s, fd = %d\n", read_path.data(), new_fd);
+	#endif
+		if (new_fd <= 0)    // not reopen the path
+			new_fd = open(read_path.data(), O_RDONLY);
+		if (new_fd < 0)
+			return -EBADF;
 		int ret = 0;
-		ret = pread(fd, buf, size, offset);
+		ret = pread(new_fd, buf, size, offset);
 		if (ret < 0)
-			return -1;
+			return -EIO;
 		offset += ret;
 		return ret;
 	}
 }
 
-int gramfs_write(const char *path, const char *buf, size_t size, off_t offset)
+int gramfs_write(const char *path, const char *buf, size_t size, off_t offset, int fd = 0)
 {
+	int ret = 0;
+	int new_fd = fd;
 	string full_path = path;
 	struct dentry *dentry = NULL;
 	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
-	lookup(path, dentry);
-	if (dentry == NULL)
-		return -1;
-	if (get_dentry_flag(dentry, D_small_file) == 0)
+	ret = lookup(path, dentry);
+	if (ret < 0)
+		return -ENOENT;
+	if (get_dentry_flag(dentry, D_type) == DIR_DENTRY);
+		return -EISDIR;
+	if (get_dentry_flag(dentry, D_small_file) == SMALL_FILE)
 	{
+	#ifdef GRAMFS_DEBUG
+		printf("write, dentry is small file\n");
+	#endif
 		if (offset > dentry->size)
-			return 0;    // offset bigger than the whole file
+		{
+		#ifdef GRAMFS_DEBUG
+			printf("write, offset bigger than the whole file\n");
+		#endif
+			return -EIO;
+		}
 		string read_key;
 		string value;
 		string write_buf;
@@ -718,15 +797,18 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset)
 		gramfs_super->sf_db.get(read_key, &value);
 		if (offset + size > SMALL_FILE_MAX_SIZE)
 		{
+		#ifdef GRAMFS_DEBUG
+			gramfs_super->GetLog()->LogMsg("write, change from small file to big file\n");
+		#endif
 			gramfs_super->sf_db.remove(read_key);
 			set_dentry_flag(dentry, D_small_file, NORMAL_FILE);    // set flag
 			dentry->size += size;
 			offset += size;
 			string write_path;
 			write_path = BIG_FILE_PATH + to_string(dentry->o_inode / 1000) + PATH_DELIMIT + to_string(dentry->o_inode);
-			int fd = open(write_path.data(), O_WRONLY | O_CREAT);
+			new_fd = open(write_path.data(), O_WRONLY | O_CREAT);
 			write_buf = value.substr(0, offset) + buf;
-			int ret = pwrite(fd, write_buf.data(), dentry->size, 0);
+			int ret = pwrite(new_fd, write_buf.data(), dentry->size, 0);
 			if (ret < 0)
 				return -1;
 			return size;
@@ -739,7 +821,58 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset)
 		}
 	} else {
 		int ret = size;
-		//need write
+		string write_path;
+		write_path = BIG_FILE_PATH + to_string(dentry->o_inode / 1000) + PATH_DELIMIT + to_string(dentry->o_inode);
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("read, from big file path = %s, fd = %d\n", write_path.data(), new_fd);
+	#endif
+		if (new_fd <= 0)
+			new_fd = open(write_path.data(), O_WRONLY | O_CREAT);
+		if (new_fd < 0)
+			return -EBADF;
+		ret = pwrite(new_fd, buf, size, offset);
+		dentry->size += size;
+		offset += size;
 		return ret;
 	}
 }
+
+int gramfs_utimens(const char *path, const struct timespec tv[2])
+{
+	int ret = 0;
+	struct dentry *dentry = (struct dentry *)calloc(1, sizeof(struct dentry));
+	ret = lookup(path, dentry);
+	if (ret < 0)
+		return -ENOENT;
+	string full_path = path;
+	string p_path;
+	string cur_name;
+	string p_name;
+	int index = full_path.find_last_of(PATH_DELIMIT);
+	if (index == 0)
+	{
+		p_path = PATH_DELIMIT;
+		p_name = PATH_DELIMIT;
+		cur_name = full_path.substr(index + 1, full_path.size());
+	} else {
+		p_path = full_path.substr(0, index);
+		cur_name = full_path.substr(index + 1, full_path.size());
+		index = p_path.find_last_of(PATH_DELIMIT);
+		p_name = p_path.substr(index + 1, p_path.size());
+	}
+	string update_key;
+	string update_value;
+	update_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->p_inode);
+	dentry->atime = tv[0].tv_sec;
+	dentry->mtime = tv[1].tv_sec;
+	update_value = serialize_dentry(dentry);
+	ret = gramfs_super->edge_db.set(update_key, update_value);
+#ifdef GRAMFS_DEBUG
+	gramfs_super->GetLog()->LogMsg("utimens, dentry name  = %s, ret = %d\n", dentry->dentry_name, ret);
+#endif
+	if (ret == 0)
+		return -EIO;
+	ret = 0;
+	return ret;
+}
+

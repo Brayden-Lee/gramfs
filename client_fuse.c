@@ -64,6 +64,8 @@ int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offs
 	ret = lookup(path, dentry);
 	if (ret < 0)
 		return -ENOENT;
+	if (get_dentry_flag(dentry, D_type) == FILE_DENTRY)
+		return -ENOTDIR;
 	string read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
 	vector<string> tmp_key;
 	string read_value;
@@ -107,7 +109,7 @@ int fuse_getattr(const char* path, struct stat* st)
 
 int fuse_rmdir(const char *path)
 {
-	return 0;
+	return gramfs_rmdir(path, false);
 }
 
 int fuse_rename(const char *path, const char *newpath)
@@ -117,12 +119,18 @@ int fuse_rename(const char *path, const char *newpath)
 
 int fuse_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fileInfo)
 {
-	return 0;
+	int fd = (int) fileInfo->fh;
+	int ret = 0;
+	ret = gramfs_read(path, buf, size, offset, fd);
+	return ret;
 }
 
 int fuse_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fileInfo)
 {
-	return 0;
+	int fd = (int) fileInfo->fh;
+	int ret = 0;
+	ret = gramfs_write(path, buf, size, offset, fd);
+	return ret;
 }
 
 int fuse_release(const char *path, struct fuse_file_info *fileInfo)
@@ -137,7 +145,7 @@ int fuse_releasedir(const char *path, struct fuse_file_info *fileInfo)
 
 int fuse_utimens(const char * path, const struct timespec tv[2])
 {
-	return 0;
+	return gramfs_utimens(path, tv);
 }
 
 int fuse_truncate(const char * path, off_t offset)
@@ -147,7 +155,7 @@ int fuse_truncate(const char * path, off_t offset)
 
 int fuse_unlink(const char * path)
 {
-	return 0;
+	return gramfs_unlink(path);
 }
 
 int fuse_chmod(const char * path, mode_t mode)
@@ -245,6 +253,11 @@ int main(int argc, char * argv[])
 	fuse_ops.getattr = fuse_getattr;
 	fuse_ops.create = fuse_create;
 	fuse_ops.open = fuse_open;
+	fuse_ops.rmdir = fuse_rmdir;
+	fuse_ops.unlink = fuse_unlink;
+	fuse_ops.read = fuse_read;
+	fuse_ops.write = fuse_write;
+	fuse_ops.utimens = fuse_utimens;
 	
 	ret = fuse_main(fuse_argc, fuse_argv, &fuse_ops, NULL);
 	printf("fuse main finished, ret %d\n", ret);

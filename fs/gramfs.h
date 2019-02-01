@@ -27,6 +27,7 @@ using namespace std;
 #define ENOTDIR 20
 #define EISDIR 21
 #define ENOTEMPTY 39
+#define EBADF 9
 
 
 #define DIR_DENTRY 0
@@ -61,6 +62,14 @@ struct part_list {
 	struct part_list *next;
 };
 
+void set_dentry_flag(struct dentry *dentry, int flag_type, int val);
+int get_dentry_flag(struct dentry *dentry, int flag_type);
+void split_path(const string& src, const string& separator, vector<string>& dest);
+string serialize_dentry(struct dentry *dentry);
+void deserialize_dentry(const string str, struct dentry *dentry);
+int dentry_match(struct part_list *plist, struct dentry *dentry);
+
+
 // api for user
 int gramfs_init(const char *edgepath, const char *nodepath, const char *sfpath);
 void gramfs_destroy();
@@ -73,9 +82,10 @@ int gramfs_releasedir(const char *path);
 int gramfs_getattr(const char *path, struct stat *st);
 int gramfs_rename(const char *path, const char *newpath);
 int gramfs_create(const char *path, mode_t mode);
+int gramfs_unlink(const char *path);
 int gramfs_open(const char *path, mode_t mode);
 int gramfs_release(const char *path);
-int gramfs_read(const char *path, char *buf, size_t size, off_t offset);
-int gramfs_write(const char *path, const char *buf, size_t size, off_t offset);
-
+int gramfs_read(const char *path, char *buf, size_t size, off_t offset, int fd);
+int gramfs_write(const char *path, const char *buf, size_t size, off_t offset, int fd);
+int gramfs_utimens(const char *path, const struct timespec tv[2]);
 #endif
