@@ -287,6 +287,149 @@ int lookup(const char *path, struct dentry *dentry)
 		return 0;
 }
 
+
+int lookup_multi_thread(const char *path, struct dentry *dentry)
+{
+	vector<string> str_vector;
+	vector<string> tmp_key;
+	string pre_str;
+	string str_dentry;
+
+	int ret = 0;
+	if (strcmp(path, PATH_DELIMIT) == 0)
+	{ // for lookup "/"
+		string root_key;
+		string root_value;
+		root_key = "//0";
+		ret = gramfs_super->edge_db.get(root_key, &root_value);
+		printf("look up (root) ret = %d, get value = %s\n", ret, root_value.data());
+		if (ret == 0)
+		{
+			ret = -ENOROOT;
+			return ret;
+		} else {
+			ret = 0;
+		}
+		deserialize_dentry(root_value, dentry);
+	#ifdef GRAMFS_DEBUG
+		printf("this is root dentry, get ret = %d\n", ret);
+	#endif
+		return ret;
+	}
+	split_path(path, "/", str_vector);
+
+	if (str_vector.size() == 2) // just the subdir of root
+	{
+		pre_str = str_vector[1];
+		pre_str = string("/") + PATH_DELIMIT + pre_str + PATH_DELIMIT + to_string(0); // for second, p_inode is 0;
+		ret = gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
+		if (ret == 0) // get false
+		{
+			ret = -ENOENT;
+			return ret;
+		} else {
+			ret = 0;
+		}
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("lookup : %s, dentry : %s, ret = %d\n", pre_str.data(), str_dentry.data(), ret);
+	#endif
+		deserialize_dentry(str_dentry, dentry);
+		return ret;
+	}
+
+	// sub dentry more than 2 (" ", xx which means "/xx" path)
+	struct part_list * plist = (struct part_list*)calloc(1, sizeof(struct part_list));
+	struct part_list *p = NULL;
+	struct part_list *q = NULL;
+	pre_str = str_vector[1];
+	pre_str = string("/") + PATH_DELIMIT + pre_str + PATH_DELIMIT + to_string(0); // for second, p_inode is 0;
+	//plist->list_name = (char *)pre_str.data();
+	strcpy(plist->list_name, pre_str.data());
+#ifdef GRAMFS_DEBUG
+	printf("lookup the first pre_str = %s, plist name = %s\n", pre_str.data(), plist->list_name);
+#endif
+	plist->part_bucket = new vector<string>();
+	plist->next = NULL;
+	ret = gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
+	if (ret == 0)
+	{
+		ret = -ENOENT;
+		return ret;
+	} else {
+		ret = 0;
+	}
+	
+	plist->part_bucket->push_back(str_dentry);
+	q = plist;
+
+	int64_t search_count = 0;
+	for (uint32_t i = 2; i < str_vector.size(); i++)
+	{
+		string new_pre_str;
+		p = (struct part_list*)calloc(1, sizeof(struct part_list));
+		new_pre_str = str_vector[i - 1] + PATH_DELIMIT + str_vector[i];
+		//p->list_name = (char *)new_pre_str.data();
+		strcpy(p->list_name, new_pre_str.data());
+	#ifdef GRAMFS_DEBUG
+		printf("lookup the %d th, pre_str = %s, plist name = %s\n", i, new_pre_str.data(), p->list_name);
+	#endif
+		p->part_bucket = new vector<string>();
+		p->next = NULL;
+
+		search_count = gramfs_super->edge_db.match_prefix(new_pre_str, &tmp_key, -1, NULL);  // get all prefix key without inode
+		if (search_count <= 0)    // error case
+		{
+		#ifdef GRAMFS_DEBUG
+			printf("lookup, pre_str = %s not in edge kv\n", new_pre_str.data());
+		#endif
+			ret = -ENOENT;
+			return ret;
+		}
+	#ifdef GRAMFS_DEBUG
+		gramfs_super->GetLog()->LogMsg("lookup, %d th sub-dentry, pre-key = %s, total  = %d\n", i, new_pre_str.data(), tmp_key.size());
+	#endif
+		for(uint32_t j = 0; j < tmp_key.size(); j++)
+		{
+			string tmp_value;
+			ret = gramfs_super->edge_db.get(tmp_key[j], &tmp_value);
+			if (ret == 0)    // error case
+			{
+			#ifdef GRAMFS_DEBUG
+				printf("lookup, error case : find key = %s but not find the value\n", tmp_key[j].data());
+			#endif
+				ret = -EIO;
+				return ret;
+			}
+			p->part_bucket->push_back(tmp_value);  // save all value for this key
+		#ifdef GRAMFS_DEBUG
+			gramfs_super->GetLog()->LogMsg("lookup : %s, dentry : %s\n", tmp_key[j].data(), tmp_value.data());
+		#endif
+		}
+		tmp_key.clear();
+		q->next = p;
+		q = q->next;
+		p = NULL;
+	}
+#ifdef GRAMFS_DEBUG
+	gramfs_super->GetLog()->LogMsg("lookup, find all sub-dentry, begin matching...\n");
+#endif
+	ret = dentry_match(plist, dentry);    // allocate value and find value
+	if (ret == -1)
+		return -ENOENT;
+	else
+		return 0;
+}
+
+void update_kv(string key, string value, int type)
+{
+	if (type == 0)    // edge kv
+	{
+		gramfs_super->edge_db.set(key, value);
+	} else {
+		gramfs_super->node_db.set(key, value);
+	}
+}
+
 // ============== user api ==================
 
 // root should be created first!
@@ -519,7 +662,7 @@ int gramfs_getattr(const char *path, struct stat *st)
 	ret = lookup(path, dentry);
 	if (ret < 0)
 		return -ENOENT;
-	st->st_mtime = dentry->ctime;
+	st->st_mtime = dentry->mtime;
 	st->st_ctime = dentry->ctime;
 	st->st_gid = dentry->gid;
 	st->st_uid = dentry->uid;
@@ -766,10 +909,11 @@ int gramfs_read(const char *path, char *buf, size_t size, off_t offset, int fd =
 		#endif
 		if (size > read_value.size())
 		{
+			size = read_value.size();
 			read_value.copy(buf, read_value.size(), offset);
 			*(buf + read_value.size()) = '\0';
 			offset += read_value.size();
-			return read_value.size();
+			return size;
 		} else {
 			read_value.copy(buf, size, 0);
 			offset += size;
@@ -790,6 +934,8 @@ int gramfs_read(const char *path, char *buf, size_t size, off_t offset, int fd =
 		if (ret < 0)
 			return -EIO;
 		offset += ret;
+		if (fd <= 0)
+			close(new_fd);
 		return ret;
 	}
 }
@@ -799,6 +945,23 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset, i
 	int ret = 0;
 	int new_fd = fd;
 	string full_path = path;
+
+	string p_path;
+	string cur_name;
+	string p_name;
+	int index = full_path.find_last_of(PATH_DELIMIT);
+	if (index == 0)
+	{
+		p_path = PATH_DELIMIT;
+		p_name = PATH_DELIMIT;
+		cur_name = full_path.substr(index + 1, full_path.size());
+	} else {
+		p_path = full_path.substr(0, index);
+		cur_name = full_path.substr(index + 1, full_path.size());
+		index = p_path.find_last_of(PATH_DELIMIT);
+		p_name = p_path.substr(index + 1, p_path.size());
+	}
+	
 	struct dentry *dentry = NULL;
 	dentry = (struct dentry*)calloc(1, sizeof(struct dentry));
 	ret = lookup(path, dentry);
@@ -809,8 +972,9 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset, i
 	if (get_dentry_flag(dentry, D_small_file) == SMALL_FILE)
 	{
 	#ifdef GRAMFS_DEBUG
-		printf("write, dentry is small file\n");
+		printf("write, dentry is small file. offset = %d, dentry size = %d\n", (int)offset, (int)dentry->size);
 	#endif
+	
 		if (offset > dentry->size)
 		{
 		#ifdef GRAMFS_DEBUG
@@ -818,12 +982,13 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset, i
 		#endif
 			return -EIO;
 		}
+		
 		string read_key;
 		string value;
 		string write_buf;
 		read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
 		gramfs_super->sf_db.get(read_key, &value);
-		if (offset + size > SMALL_FILE_MAX_SIZE)
+		if (offset + dentry->size > SMALL_FILE_MAX_SIZE)
 		{
 		#ifdef GRAMFS_DEBUG
 			gramfs_super->GetLog()->LogMsg("write, change from small file to big file\n");
@@ -839,12 +1004,27 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset, i
 			int ret = pwrite(new_fd, write_buf.data(), dentry->size, 0);
 			if (ret < 0)
 				return -1;
-			return size;
+			close(new_fd);
+
+			// dentry have changed
+			string update_key;
+			string update_value;
+			update_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->p_inode);
+			update_value = serialize_dentry(dentry);
+			update_kv(update_key, update_value, 0);
+			return ret;
 		} else {
 			dentry->size += size;
 			offset += size;
 			write_buf = value.substr(0, offset) + buf;
 			gramfs_super->sf_db.set(read_key, write_buf);
+			
+			// dentry have changed
+			string update_key;
+			string update_value;
+			update_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->p_inode);
+			update_value = serialize_dentry(dentry);
+			update_kv(update_key, update_value, 0);
 			return size;
 		}
 	} else {
@@ -861,6 +1041,15 @@ int gramfs_write(const char *path, const char *buf, size_t size, off_t offset, i
 		ret = pwrite(new_fd, buf, size, offset);
 		dentry->size += size;
 		offset += size;
+		if (fd <= 0)
+			close(new_fd);
+
+		// dentry have changed
+		string update_key;
+		string update_value;
+		update_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->p_inode);
+		update_value = serialize_dentry(dentry);
+		update_kv(update_key, update_value, 0);
 		return ret;
 	}
 }

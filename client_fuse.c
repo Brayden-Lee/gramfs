@@ -29,20 +29,20 @@ int fuse_open(const char *path, struct fuse_file_info *fileInfo)
 	int fd = 0;
 	mode_t mode = fileInfo->flags;
 	fd = gramfs_open(path, mode);
+	if (fd < 0)
+		return fd;
 	fileInfo->fh = (uint64_t)fd;
-	if (fd > 0)
-		fd = 0;
-	return fd;
+	return 0;
 }
 
 int fuse_create(const char * path, mode_t mode, struct fuse_file_info * info)
 {
-	int fd = 0;
-	fd = gramfs_create(path, mode);
-	info->fh = (uint64_t)fd;
-	if (fd > 0)
-		fd = 0;
-	return fd;
+	int ret = 0;
+	ret = gramfs_create(path, mode);
+	if (ret < 0)
+		return ret;
+	info->fh = 0;
+	return 0;
 }
 
 int fuse_mkdir(const char *path, mode_t mode)
@@ -122,6 +122,9 @@ int fuse_read(const char *path, char *buf, size_t size, off_t offset, struct fus
 	int fd = (int) fileInfo->fh;
 	int ret = 0;
 	ret = gramfs_read(path, buf, size, offset, fd);
+	//if (ret < 0)
+	//	return ret;
+	//fileInfo->fh = (uint64_t) ret;
 	return ret;
 }
 
