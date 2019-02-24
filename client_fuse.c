@@ -66,7 +66,7 @@ int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offs
 		return -ENOENT;
 	if (get_dentry_flag(dentry, D_type) == FILE_DENTRY)
 		return -ENOTDIR;
-	string read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name;
+	string read_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name + PATH_DELIMIT;
 	vector<string> tmp_key;
 	string read_value;
 	get_gramfs_super()->node_db.match_prefix(read_key, &tmp_key, -1, NULL);

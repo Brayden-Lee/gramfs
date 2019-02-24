@@ -27,6 +27,7 @@ using namespace std;
 #define ENOTDIR 20
 #define EISDIR 21
 #define ENOTEMPTY 39
+#define ENOSYS 38    // function not implemented
 #define EBADF 9
 
 
