@@ -80,7 +80,10 @@ int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offs
 	for (uint32_t i = 0; i < tmp_key.size(); i++)
 	{
 		read_key = tmp_key[i];
-		get_gramfs_super()->node_db.get(read_key, &read_value);
+		if (!get_gramfs_super()->FindNode(read_key, read_value)) {
+			get_gramfs_super()->node_db.get(read_key, &read_value);
+			get_gramfs_super()->InsertNode(read_key, read_value);
+		}
 		sub_name = (char *)read_value.data();
 	#ifdef GRAMFS_DEBUG
 		get_gramfs_super()->GetLog()->LogMsg("readdir path = %s, have child key : %s\n", path, sub_name);
@@ -228,7 +231,7 @@ static struct fuse_operations fuse_ops;
 static void usage(void)
 {
     printf(
-    "usage: ./client_fuse edgepath nodepath smallfilepath\n"
+    "usage: ./client_fuse /mnt/gramfs edgepath nodepath smallfilepath\n"
     );
 }
 
@@ -245,12 +248,19 @@ int main(int argc, char * argv[])
 	}
 
 	int fuse_argc = 0;
-	char * fuse_argv[argc];
+	char * fuse_argv[20];
+	fuse_argv[fuse_argc++] = argv[0];
+	fuse_argv[fuse_argc++] = argv[1];    // mount point
+	if (argc > 2) {
+		fuse_argv[fuse_argc++] = argv[3];
+	}
+	/*
 	for (i = 0; i < argc; i++) {
 		if (argv[i] != NULL) {
 			fuse_argv[fuse_argc++] = argv[i];
 		}
 	}
+	*/
 
 	// for test begin
 	string edgepath = "/mnt/myfs/edge.kch";

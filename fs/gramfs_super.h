@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <string>
+#include <unordered_map>
 #include <kcpolydb.h>
 #include "../tools/logging.h"
 
@@ -23,6 +24,13 @@ public:
 	Logging* GetLog();
 	int64_t get_curr_unique_id();
 	int64_t generate_unique_id();
+	bool FindEdge(string& key, string& value);
+	void InsertEdge(string& key, string& value);
+	void EvictEdge(string& key);
+	bool FindNode(string& key, string& value);
+	void InsertNode(string& key, string& value);
+	void EvictNode(string& key);
+
 	PolyDB edge_db;
 	PolyDB node_db;
 	PolyDB sf_db;
@@ -33,6 +41,10 @@ private:
 	string node_name;
 	string sf_name;
 	uint64_t curr_unique_id;
+	unordered_map<string, string> edge_map;
+	size_t maxedgesize;
+	unordered_map<string, string> node_map;
+	size_t maxnodesize;
 };
 
 #endif

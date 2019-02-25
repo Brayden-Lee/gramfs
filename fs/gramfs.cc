@@ -168,14 +168,17 @@ int lookup(const char *path, struct dentry *dentry)
 		string root_key;
 		string root_value;
 		root_key = "//0";
-		ret = gramfs_super->edge_db.get(root_key, &root_value);
-		printf("look up (root) ret = %d, get value = %s\n", ret, root_value.data());
-		if (ret == 0)
-		{
-			ret = -ENOROOT;
-			return ret;
-		} else {
-			ret = 0;
+		if (!gramfs_super->FindEdge(root_key, root_value)) {
+			ret = gramfs_super->edge_db.get(root_key, &root_value);
+			printf("look up (root) ret = %d, get value = %s\n", ret, root_value.data());
+			if (ret == 0)
+			{
+				ret = -ENOROOT;
+				return ret;
+			} else {
+				ret = 0;
+				gramfs_super->InsertEdge(root_key, root_value);
+			}
 		}
 		deserialize_dentry(root_value, dentry);
 	#ifdef GRAMFS_DEBUG
@@ -189,13 +192,16 @@ int lookup(const char *path, struct dentry *dentry)
 	{
 		pre_str = str_vector[1];
 		pre_str = string("/") + PATH_DELIMIT + pre_str + PATH_DELIMIT + to_string(0); // for second, p_inode is 0;
-		ret = gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
-		if (ret == 0) // get false
-		{
-			ret = -ENOENT;
-			return ret;
-		} else {
-			ret = 0;
+		if (!gramfs_super->FindEdge(pre_str, str_dentry)) {    // cache
+			ret = gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
+			if (ret == 0) // get false
+			{
+				ret = -ENOENT;
+				return ret;
+			} else {
+				gramfs_super->InsertEdge(pre_str, str_dentry);
+				ret = 0;
+			}
 		}
 	#ifdef GRAMFS_DEBUG
 		gramfs_super->GetLog()->LogMsg("lookup : %s, dentry : %s, ret = %d\n", pre_str.data(), str_dentry.data(), ret);
@@ -217,13 +223,16 @@ int lookup(const char *path, struct dentry *dentry)
 #endif
 	plist->part_bucket = new vector<string>();
 	plist->next = NULL;
-	ret = gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
-	if (ret == 0)
-	{
-		ret = -ENOENT;
-		return ret;
-	} else {
-		ret = 0;
+	if (!gramfs_super->FindEdge(pre_str, str_dentry)) {    // cache
+		ret = gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
+		if (ret == 0)
+		{
+			ret = -ENOENT;
+			return ret;
+		} else {
+			gramfs_super->InsertEdge(pre_str, str_dentry);
+			ret = 0;
+		}
 	}
 	
 	plist->part_bucket->push_back(str_dentry);
@@ -257,14 +266,17 @@ int lookup(const char *path, struct dentry *dentry)
 		for(uint32_t j = 0; j < tmp_key.size(); j++)
 		{
 			string tmp_value;
-			ret = gramfs_super->edge_db.get(tmp_key[j], &tmp_value);
-			if (ret == 0)    // error case
-			{
-			#ifdef GRAMFS_DEBUG
-				printf("lookup, error case : find key = %s but not find the value\n", tmp_key[j].data());
-			#endif
-				ret = -EIO;
-				return ret;
+			if (!gramfs_super->FindEdge(tmp_key[j], tmp_value)) {
+				ret = gramfs_super->edge_db.get(tmp_key[j], &tmp_value);
+				if (ret == 0)    // error case
+				{
+				#ifdef GRAMFS_DEBUG
+					printf("lookup, error case : find key = %s but not find the value\n", tmp_key[j].data());
+				#endif
+					ret = -EIO;
+					return ret;
+				}
+				gramfs_super->InsertEdge(tmp_key[j], tmp_value);
 			}
 			p->part_bucket->push_back(tmp_value);  // save all value for this key
 		#ifdef GRAMFS_DEBUG
@@ -287,7 +299,7 @@ int lookup(const char *path, struct dentry *dentry)
 }
 
 
-int lookup_multi_thread(const char *path, struct dentry *dentry)
+int lookup_threads(const char *path, struct dentry *dentry)
 {
 	vector<string> str_vector;
 	vector<string> tmp_key;
@@ -300,14 +312,17 @@ int lookup_multi_thread(const char *path, struct dentry *dentry)
 		string root_key;
 		string root_value;
 		root_key = "//0";
-		ret = gramfs_super->edge_db.get(root_key, &root_value);
-		printf("look up (root) ret = %d, get value = %s\n", ret, root_value.data());
-		if (ret == 0)
-		{
-			ret = -ENOROOT;
-			return ret;
-		} else {
-			ret = 0;
+		if (!gramfs_super->FindEdge(root_key, root_value)) {
+			ret = gramfs_super->edge_db.get(root_key, &root_value);
+			printf("look up (root) ret = %d, get value = %s\n", ret, root_value.data());
+			if (ret == 0)
+			{
+				ret = -ENOROOT;
+				return ret;
+			} else {
+				ret = 0;
+				gramfs_super->InsertEdge(root_key, root_value);
+			}
 		}
 		deserialize_dentry(root_value, dentry);
 	#ifdef GRAMFS_DEBUG
@@ -321,13 +336,16 @@ int lookup_multi_thread(const char *path, struct dentry *dentry)
 	{
 		pre_str = str_vector[1];
 		pre_str = string("/") + PATH_DELIMIT + pre_str + PATH_DELIMIT + to_string(0); // for second, p_inode is 0;
-		ret = gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
-		if (ret == 0) // get false
-		{
-			ret = -ENOENT;
-			return ret;
-		} else {
-			ret = 0;
+		if (!gramfs_super->FindEdge(pre_str, str_dentry)) {    // cache
+			ret = gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
+			if (ret == 0) // get false
+			{
+				ret = -ENOENT;
+				return ret;
+			} else {
+				gramfs_super->InsertEdge(pre_str, str_dentry);
+				ret = 0;
+			}
 		}
 	#ifdef GRAMFS_DEBUG
 		gramfs_super->GetLog()->LogMsg("lookup : %s, dentry : %s, ret = %d\n", pre_str.data(), str_dentry.data(), ret);
@@ -349,25 +367,30 @@ int lookup_multi_thread(const char *path, struct dentry *dentry)
 #endif
 	plist->part_bucket = new vector<string>();
 	plist->next = NULL;
-	ret = gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
-	if (ret == 0)
-	{
-		ret = -ENOENT;
-		return ret;
-	} else {
-		ret = 0;
+	if (!gramfs_super->FindEdge(pre_str, str_dentry)) {    // cache
+		ret = gramfs_super->edge_db.get(pre_str, &str_dentry); // for root dentry
+		if (ret == 0)
+		{
+			ret = -ENOENT;
+			return ret;
+		} else {
+			gramfs_super->InsertEdge(pre_str, str_dentry);
+			ret = 0;
+		}
 	}
 	
 	plist->part_bucket->push_back(str_dentry);
 	q = plist;
 
 	int64_t search_count = 0;
+	int thread_num = str_vector.size() - 2;
+	omp_set_num_threads(thread_num);
+	#pragma omp parallel num_threads(thread_num)
 	for (uint32_t i = 2; i < str_vector.size(); i++)
 	{
 		string new_pre_str;
 		p = (struct part_list*)calloc(1, sizeof(struct part_list));
-		new_pre_str = str_vector[i - 1] + PATH_DELIMIT + str_vector[i] + PATH_DELIMIT;
-		//p->list_name = (char *)new_pre_str.data();
+		new_pre_str = str_vector[i - 1] + PATH_DELIMIT + str_vector[i] + PATH_DELIMIT;    // the last "/" avoid the prefix
 		strcpy(p->list_name, new_pre_str.data());
 	#ifdef GRAMFS_DEBUG
 		printf("lookup the %d th, pre_str = %s, plist name = %s\n", i, new_pre_str.data(), p->list_name);
@@ -390,14 +413,17 @@ int lookup_multi_thread(const char *path, struct dentry *dentry)
 		for(uint32_t j = 0; j < tmp_key.size(); j++)
 		{
 			string tmp_value;
-			ret = gramfs_super->edge_db.get(tmp_key[j], &tmp_value);
-			if (ret == 0)    // error case
-			{
-			#ifdef GRAMFS_DEBUG
-				printf("lookup, error case : find key = %s but not find the value\n", tmp_key[j].data());
-			#endif
-				ret = -EIO;
-				return ret;
+			if (!gramfs_super->FindEdge(tmp_key[j], tmp_value)) {
+				ret = gramfs_super->edge_db.get(tmp_key[j], &tmp_value);
+				if (ret == 0)    // error case
+				{
+				#ifdef GRAMFS_DEBUG
+					printf("lookup, error case : find key = %s but not find the value\n", tmp_key[j].data());
+				#endif
+					ret = -EIO;
+					return ret;
+				}
+				gramfs_super->InsertEdge(tmp_key[j], tmp_value);
 			}
 			p->part_bucket->push_back(tmp_value);  // save all value for this key
 		#ifdef GRAMFS_DEBUG
@@ -419,13 +445,18 @@ int lookup_multi_thread(const char *path, struct dentry *dentry)
 		return 0;
 }
 
+
 void update_kv(string key, string value, int type)
 {
 	if (type == 0)    // edge kv
 	{
 		gramfs_super->edge_db.set(key, value);
+		gramfs_super->EvictEdge(key);
+		gramfs_super->InsertEdge(key, value);
 	} else {
 		gramfs_super->node_db.set(key, value);
+		gramfs_super->EvictNode(key);
+		gramfs_super->InsertNode(key, value);
 	}
 }
 
@@ -458,6 +489,7 @@ int gramfs_init(const char *edgepath, const char *nodepath, const char *sfpath)
 	add_value = serialize_dentry(root_dentry);
 	add_key = PATH_DELIMIT + string(PATH_DELIMIT) + to_string(root_dentry->o_inode);
 	ret = gramfs_super->edge_db.set(add_key, add_value);
+	gramfs_super->InsertEdge(add_key, add_value);
 #ifdef GRAMFS_DEBUG
 	gramfs_super->GetLog()->LogMsg("gramfs init root entry key = %s, value = %s, with ret = %d\n", add_key.data(), add_value.data(), ret);
 #endif
@@ -510,12 +542,17 @@ int gramfs_mkdir(const char *path, mode_t mode)
 	string add_key;
 	string add_value;
 	add_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->o_inode);
-	if (gramfs_super->edge_db.get(add_key, &add_value))
-	{
-	#ifdef GRAMFS_DEBUG
-		gramfs_super->GetLog()->LogMsg("mkdir, you created dir = %s exists in the namespace\n", cur_name.data());
-	#endif
-		return -EEXIST;    // this dir has existed
+	if (!gramfs_super->FindEdge(add_key, add_value)) {    // cache
+		#ifdef GRAMFS_DEBUG
+			gramfs_super->GetLog()->LogMsg("mkdir, you created dir = %s not exists in the cache\n", cur_name.data());
+		#endif
+		if (gramfs_super->edge_db.get(add_key, &add_value))
+		{
+			gramfs_super->InsertEdge(add_key, add_value);
+			return -EEXIST;    // this dir has existed
+		}
+	} else {
+		return -EEXIST;
 	}
 	struct dentry *add_dentry = (struct dentry *)calloc(1, sizeof(struct dentry));
 	add_dentry->o_inode = gramfs_super->generate_unique_id();
@@ -540,6 +577,7 @@ int gramfs_mkdir(const char *path, mode_t mode)
 #ifdef GRAMFS_DEBUG
 		gramfs_super->GetLog()->LogMsg("mkdir, create edge key = %s with ret = %d\n", add_key.data(), ret);
 #endif
+	gramfs_super->InsertEdge(add_key, add_value);
 	// add to node kv
 	add_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name + PATH_DELIMIT + to_string(add_dentry->o_inode);
 	add_value = cur_name;
@@ -549,6 +587,7 @@ int gramfs_mkdir(const char *path, mode_t mode)
 #ifdef GRAMFS_DEBUG
 	gramfs_super->GetLog()->LogMsg("mkdir, create node key = %s with ret = %d\n", add_key.data(), ret);
 #endif
+	gramfs_super->InsertNode(add_key, add_value);
 	return 0;
 }
 
@@ -595,6 +634,7 @@ int gramfs_rmdir(const char *path, bool rmall)
 		#endif
 			return -EIO;
 		}
+		gramfs_super->EvictEdge(rm_key);    // cache
 		return 0;
 	} else {
 		if (rmall)
@@ -608,6 +648,7 @@ int gramfs_rmdir(const char *path, bool rmall)
 			#endif
 				return -EIO;
 			}
+			gramfs_super->EvictEdge(rm_key);    // cache
 			return 0;		
 		} else {
 			return -ENOTEMPTY;    // not an empty dir without -r
@@ -633,7 +674,14 @@ int gramfs_readdir(const char *path)
 	for (uint32_t i = 0; i < tmp_key.size(); i++)
 	{
 		read_key = tmp_key[i];
-		get_gramfs_super()->node_db.get(read_key, &read_value);
+		if (!gramfs_super->FindNode(read_key, read_value)) {    // cache
+			ret = gramfs_super->node_db.get(read_key, &read_value);
+			if (ret == 1) {
+				gramfs_super->InsertNode(read_key, read_value);
+			} else {
+				return -EIO;
+			}
+		}
 		cout<< "child "<< i << " is :" <<read_value<<endl;
 	}
 	return 0;
@@ -712,12 +760,17 @@ int gramfs_create(const char *path, mode_t mode)
 	string add_key;
 	string add_value;
 	add_key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->o_inode);
-	if (gramfs_super->edge_db.get(add_key, &add_value))
-	{
-	#ifdef GRAMFS_DEBUG
-		gramfs_super->GetLog()->LogMsg("create, you created file = %s exists in the namespace\n", cur_name.data());
-	#endif
-		return -EEXIST;    // this dir has existed
+	if (!gramfs_super->FindEdge(add_key, add_value)) {    // cache
+		#ifdef GRAMFS_DEBUG
+			gramfs_super->GetLog()->LogMsg("create, you created file = %s not exists in the edge map\n", cur_name.data());
+		#endif
+		if (gramfs_super->edge_db.get(add_key, &add_value))
+		{
+			gramfs_super->InsertEdge(add_key, add_value);
+			return -EEXIST;    // this dir has existed
+		}
+	} else {
+		return -EEXIST;
 	}
 	struct dentry *add_dentry = (struct dentry *)calloc(1, sizeof(struct dentry));
 	add_dentry->o_inode = gramfs_super->generate_unique_id();
@@ -742,6 +795,7 @@ int gramfs_create(const char *path, mode_t mode)
 #ifdef GRAMFS_DEBUG
 	gramfs_super->GetLog()->LogMsg("create, create edge key = %s with ret = %d\n", add_key.data(), ret);
 #endif
+	gramfs_super->InsertEdge(add_key, add_value);
 	// add to node kv
 	add_key = to_string(dentry->o_inode) + PATH_DELIMIT + dentry->dentry_name + PATH_DELIMIT + to_string(add_dentry->o_inode);
 	add_value = cur_name;
@@ -751,6 +805,7 @@ int gramfs_create(const char *path, mode_t mode)
 #ifdef GRAMFS_DEBUG
 	gramfs_super->GetLog()->LogMsg("create, create node key = %s with ret = %d\n", add_key.data(), ret);
 #endif
+	gramfs_super->InsertNode(add_key, add_value);
 	//return fd;	
 	return 0;
 }
@@ -791,6 +846,7 @@ int gramfs_unlink(const char *path)
 	#endif
 		return -EIO;
 	}
+	gramfs_super->EvictEdge(rm_key);    // cache
 	rm_key = to_string(dentry->p_inode) + PATH_DELIMIT + p_name + PATH_DELIMIT + to_string(dentry->o_inode);
 	ret = gramfs_super->node_db.remove(rm_key);	
 	if (ret == 0)
@@ -800,6 +856,7 @@ int gramfs_unlink(const char *path)
 	#endif
 		return -EIO;
 	}
+	gramfs_super->EvictNode(rm_key);    // cache
 
 	// following seems redundant
 	if (get_dentry_flag(dentry, D_small_file) == SMALL_FILE)    // for small file
@@ -850,11 +907,14 @@ int gramfs_open(const char *path, mode_t mode)
 	string key;
 	string value;
 	key = p_name + PATH_DELIMIT + cur_name + PATH_DELIMIT + to_string(dentry->o_inode);
-	if (gramfs_super->edge_db.get(key, &value) == 0)
-	{
-		if ((mode & O_CREAT) == 0)
-			return -ENOENT;
-		return gramfs_create(path, mode);
+	if (!gramfs_super->FindEdge(key, value)) {
+		if (gramfs_super->edge_db.get(key, &value) == 0)
+		{
+			if ((mode & O_CREAT) == 0)
+				return -ENOENT;
+			return gramfs_create(path, mode);
+		}
+		gramfs_super->InsertEdge(key, value);
 	}
 	deserialize_dentry(value, dentry);
 	if (get_dentry_flag(dentry, D_type) == DIR_DENTRY)
@@ -1088,6 +1148,7 @@ int gramfs_utimens(const char *path, const struct timespec tv[2])
 #endif
 	if (ret == 0)
 		return -EIO;
+	gramfs_super->InsertEdge(update_key, update_value);
 	ret = 0;
 	return ret;
 }
